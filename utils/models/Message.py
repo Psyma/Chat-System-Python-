@@ -4,9 +4,7 @@ class Message(object):
     def __init__(self, 
             image: bytes = None, 
             image_index: int = 0, 
-            image_len: int = 0, 
-            image_width: int = 0, 
-            image_height: int = 0, 
+            image_len: int = 0,  
             audio: bytes = None,
             message: str = None, 
             sender: str = None, 
@@ -17,9 +15,7 @@ class Message(object):
             
         self.image = image
         self.image_index = image_index
-        self.image_len = image_len
-        self.image_width = image_width
-        self.image_height = image_height
+        self.image_len = image_len 
         self.audio = audio
         self.message = message
         self.sender = sender

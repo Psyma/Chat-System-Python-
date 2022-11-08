@@ -1,12 +1,12 @@
 from __future__ import annotations 
 import os
-import sys 
 import cv2
+import sys  
 import time
-import imgui
-import base64
-import pickle
+import imgui 
 import socket
+import pickle
+import base64
 import pyaudio
 
 from threading import Thread 
@@ -37,10 +37,9 @@ class AppClient(Gui):
         super().__init__(window_name, window_width, window_height, is_resizeable)
 
         MS = 30
-        RATE = 16000
+        RATE = 48000
         AUDIO = pyaudio.PyAudio()
-        FORMAT = pyaudio.paInt16
-        WEBRTCVAD = 1
+        FORMAT = pyaudio.paInt16 
         CHANNELS = 1
 
         self.to_user: str = "" 
@@ -50,9 +49,9 @@ class AppClient(Gui):
         self.is_display_frame: bool = True
         self.fonts_map = self.set_fonts()
         self.client = Client(host=host, tcp_port=tcp_port, udp_port=udp_port)
-        #self.video_stream = VideoStream(0) # TODO:
         self.string_stream = StringStream()
-        #self.audio_stream = AudioStream(MS, RATE, AUDIO, FORMAT, WEBRTCVAD, CHANNELS) # TODO:
+        self.video_stream = VideoStream(0) # TODO:
+        self.audio_stream = AudioStream(MS, RATE, AUDIO, FORMAT, CHANNELS) # TODO:
 
     def start(self): 
         self.t = Thread(target=self.show_frames, args=())
@@ -65,10 +64,39 @@ class AppClient(Gui):
                 pass 
             time.sleep(1) 
 
-    def send(self, data: Message, size: int, dst: tuple):
-        self.string_stream.send(data, self.client.tcp_transport, size, dst)
+    def send_string(self, data: Message):
+        self.string_stream.send(data, self.client.tcp_transport)
         message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), "You", data.message) 
         self.client.users_chat_map[data.receiver]['messages'].append(message)
+
+    def send_image(self, frame, size = 65536): 
+        encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        frames = base64.b64encode(buffer)
+
+        chunks = [frames[i:i+size] for i in range(0,len(frames), size)] 
+        for i, chunk in enumerate(chunks):
+            data = Message(image=chunk, 
+                            image_index=i, 
+                            image_len=len(chunks) - 1,  
+                            sender=self.client.username, 
+                            receiver=self.to_user, 
+                            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                            type=MessageType.MESSAGE) 
+                                
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, size)
+            self.socket.sendto(pickle.dumps(data), self.client.udp_peername)
+    
+    def send_audio(self, frame, size: int = 65536):
+        data = Message(audio=frame, 
+                        sender=self.client.username, 
+                        receiver=self.to_user, 
+                        timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                        type=MessageType.MESSAGE) 
+        
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, size)
+        self.socket.sendto(pickle.dumps(data), self.client.udp_peername)
 
     def set_fonts(self):
         fonts_map: dict[str, dict[str, None | int | str]] = {
@@ -95,57 +123,6 @@ class AppClient(Gui):
         } 
 
         return fonts_map
-
-    def send_image(self):
-        ret, frame = self.cap.read() 
-        if ret: 
-            SIZE = 65536
-            height, width, channel = frame.shape
-            encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            frames = base64.b64encode(buffer)
-
-            chunks = [frames[i:i+SIZE] for i in range(0,len(frames), SIZE)] 
-            for i, chunk in enumerate(chunks):
-                data = Message(image=chunk, 
-                                image_index=i, 
-                                image_len=len(chunks) - 1, 
-                                image_width=width, 
-                                image_height=height, 
-                                sender=self.client.username, 
-                                receiver=self.to_user, 
-                                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                                type=MessageType.MESSAGE) 
-                self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
-                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SIZE)
-                self.socket.sendto(pickle.dumps(data), self.udp_peername)
-    
-    def send_audio(self):
-        import pyaudio, keyboard, wave
-        #from utils.messaging.AudioStream import AudioStream
-
-        MS = 30
-        RATE = 16000
-        WEBRTCVAD = 1
-        CHANNELS = 1
-
-        microphone = AudioStream(MS, RATE, pyaudio.PyAudio(), pyaudio.paInt16, WEBRTCVAD, CHANNELS)
-        microphone.start()
-        print("Speak something, press 'q' to exit!")
-
-        counter = 1
-        while True:
-            frames = microphone.getitem()
-            if frames != None:      
-                waveFile = wave.open("audio-{}.wav".format(counter), 'wb')
-                waveFile.setnchannels(CHANNELS)
-                waveFile.setsampwidth(microphone.get_sample_size())
-                waveFile.setframerate(RATE)
-                waveFile.writeframes(frames)
-                waveFile.close()
-                counter = counter + 1
-            if keyboard.is_pressed('q'):
-                break
-            time.sleep(0.5)
 
     def chat_box(self): 
         imgui.begin('mainwindow', flags=imgui.WINDOW_MENU_BAR | imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_RESIZE)
@@ -178,7 +155,7 @@ class AppClient(Gui):
                             timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
                             sender_peername=self.client.sockname, 
                             type=MessageType.MESSAGE)
-            self.send(data, None, None)
+            self.send_string(data)
             imgui.set_keyboard_focus_here()
 
         imgui.begin_child('chatbox', border=True)

@@ -68,10 +68,8 @@ class Client(object):
         self.image = self.image + data.image
         if data.image_index == data.image_len:
             try: 
-                self.image = base64.b64decode(self.image, ' /') 
-                self.image = np.frombuffer(self.image, dtype=np.uint8)
-                self.image = cv2.imdecode(self.image, 1)
                 # TODO: display video call
+                pass
             except:
                 pass
             self.image = b'' 
