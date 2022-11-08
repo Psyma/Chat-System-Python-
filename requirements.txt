@@ -1,0 +1,5 @@
+pyaudio
+webrtcvad
+imgui[full]
+opencv-python
+imgui-datascience
