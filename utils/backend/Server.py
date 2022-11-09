@@ -29,6 +29,7 @@ class Server(object):
                     await asyncio.sleep(0.01)
 
     async def __disconnected(self, transport: asyncio.BaseTransport):
+        sender = None
         peername = transport.get_extra_info('peername')
         timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
         for sender1, peername1 in list(self.peername_map.items()):
@@ -40,8 +41,9 @@ class Server(object):
         
         del self.transport_map[peername]
         for peername, transport in list(self.transport_map.items()):
-            data = Message(sender=sender, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), type=MessageType.DISCONNECTED) 
-            transport.write(pickle.dumps(data)) 
+            if sender != None:
+                data = Message(sender=sender, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), type=MessageType.DISCONNECTED) 
+                transport.write(pickle.dumps(data)) 
             await asyncio.sleep(0.01)  
 
     def __tcp_connection_made(self, transport: asyncio.BaseTransport):

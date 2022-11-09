@@ -28,8 +28,8 @@ from utils.messaging.StringStream import StringStream
 class AppClient(Gui):
     def __init__(self, 
                 window_name="", 
-                window_width=360, 
-                window_height=450, 
+                window_width=1024, 
+                window_height=768, 
                 is_resizeable=False, 
                 host="127.0.0.1", 
                 tcp_port=9999, 
@@ -50,8 +50,8 @@ class AppClient(Gui):
         self.fonts_map = self.set_fonts()
         self.client = Client(host=host, tcp_port=tcp_port, udp_port=udp_port)
         self.string_stream = StringStream()
-        self.video_stream = VideoStream(0) # TODO:
-        self.audio_stream = AudioStream(MS, RATE, AUDIO, FORMAT, CHANNELS) # TODO:
+        #self.video_stream = VideoStream(0) # TODO:
+        #self.audio_stream = AudioStream(MS, RATE, AUDIO, FORMAT, CHANNELS) # TODO:
 
     def start(self): 
         self.t = Thread(target=self.show_frames, args=())
@@ -119,7 +119,17 @@ class AppClient(Gui):
                 "font-obj" : None,
                 "font-size" : 40,
                 "font-path" : ROOT_DIR + "/assets/Maladewa.ttf"
-            }
+            },
+            "profile-fonts-Maladewa-30" : {
+                "font-obj" : None,
+                "font-size" : 30,
+                "font-path" : ROOT_DIR + "/assets/Maladewa.ttf"
+            },
+            "profile-fonts-Drift-25" : {
+                "font-obj" : None,
+                "font-size" : 25,
+                "font-path" : ROOT_DIR + "/assets/Drift.ttf"
+            },
         } 
 
         return fonts_map
@@ -260,19 +270,160 @@ class AppClient(Gui):
                 imgui.close_current_popup()
             imgui.end_popup()
     
-    def frame_commands(self): 
-        imgui.set_next_window_size(self.window_width, self.window_height)
+    def new_chatbox(self):
+        imgui.set_next_window_size(self.window_width - 299, self.window_height)
+        imgui.set_next_window_position(299, 0)
+        imgui.begin("chatbox", flags=imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_COLLAPSE)
+        
+        if True:
+            imgui.begin_child("1", border=False, height=65, flags=imgui.WINDOW_NO_SCROLLBAR)
+            img = cv2.imread(ROOT_DIR + "/assets/default_profile.png")
+            imgui_cv.image(img, width=65)
+            imgui.same_line()
+            if True:
+                imgui.begin_child("test1", border=True, width=250)
+                imgui.push_font(self.fonts_map['profile-fonts-Maladewa-30']['font-obj']) 
+                imgui.text_wrapped(self.to_user)
+                imgui.pop_font()
+                imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)
+                imgui.text_wrapped("Active now")
+                imgui.pop_style_color() 
+                imgui.end_child()
+
+            if True:
+                imgui.same_line()
+                imgui.begin_child("test2", border=True)
+                imgui.set_cursor_pos_y(13)
+                imgui.button("Video Call")
+                imgui.same_line()
+                imgui.button("Audio Call")
+                changed, text_val = imgui.input_text("Search", "", 100, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+                imgui.end_child()
+            imgui.end_child()
+
+        if True:
+            imgui.separator()
+            imgui.begin_child("2", border=False)
+            changed, text_val = imgui.input_text("Message", "", 100, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+            if changed:
+                if text_val:
+                    data = Message(message=text_val, 
+                                sender=self.client.username, 
+                                receiver=self.to_user, 
+                                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                                sender_peername=self.client.sockname, 
+                                type=MessageType.MESSAGE)
+                    self.send_string(data)
+                imgui.set_keyboard_focus_here()
+            imgui.same_line()
+            imgui.button("Add files")
+            imgui.same_line()
+            imgui.button("Stickers")
+            imgui.same_line()
+            imgui.button("GIF")
+            
+            if True:
+                imgui.begin_child("3", border=True)  
+                for user, value in self.client.users_chat_map.items():
+                    if user == self.to_user: 
+                        for data in value['messages']: 
+                            if "] [You]:" in data:
+                                imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0) 
+                                imgui.text_wrapped(data)  
+                                imgui.pop_style_color() 
+                            else:
+                                imgui.push_style_color(imgui.COLOR_TEXT, 0, 0, 1) 
+                                imgui.text_wrapped(data)  
+                                imgui.pop_style_color() 
+                imgui.end_child()
+            imgui.end_child()
+        imgui.end()
+
+    def new_profile(self): 
+        imgui.set_next_window_size(300, self.window_height)
         imgui.set_next_window_position(0, 0)
-        if self.display_chatbox:
-            self.chat_box()
-        else:
-            imgui.get_style().window_rounding = 0
-            imgui.begin("mainwindow", flags=imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_COLLAPSE)
-            self.user_login() 
+        imgui.get_style().window_rounding = 0
+        imgui.begin("sidebar", flags=imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_COLLAPSE) 
+
+        if True:
+            imgui.begin_child("1", border=True, height=130)
+            img = cv2.imread(ROOT_DIR + "/assets/default_profile.png")
+            imgui_cv.image(img, width=65)
+            imgui.same_line()
+            imgui.push_font(self.fonts_map['profile-fonts-Maladewa-30']['font-obj'])
+            imgui.text_wrapped(self.client.username)
+            imgui.pop_font()
+            changed, text_val = imgui.input_text("Search", "", 100, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+            imgui.button("Chats")
+            imgui.same_line()
+            imgui.button("Calls")
+            imgui.same_line()
+            imgui.button("Contacts")
+            imgui.same_line()
+            imgui.button("Notifications")
+            imgui.end_child() 
+
+        if True:
+            imgui.begin_child("2", border=True)
+            if changed:
+                imgui.set_keyboard_focus_here()
+            for i, (key, value) in enumerate(self.client.users_map.items()):
+                if str(text_val).casefold() in key.casefold():
+                    imgui.push_font(self.fonts_map['profile-fonts-Drift']['font-obj'])
+                    if value['online']:
+                        imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0, 1)
+                    else:
+                        imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0, 1)
+                    imgui.set_cursor_pos_x(5)
+                    imgui.push_id(key)
+                    clicked, _ = imgui.selectable(label=key[0], flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS | imgui.SELECTABLE_DONT_CLOSE_POPUPS)
+                    if clicked:
+                        self.to_user = key
+                        self.display_chatbox = True
+                    imgui.pop_id()
+                    imgui.pop_font()
+                    imgui.pop_style_color()
+                    imgui.same_line()
+                    imgui.set_cursor_pos_x(40)
+                    imgui.push_font(self.fonts_map['profile-fonts-Bebas']['font-obj'])
+                    imgui.text_wrapped("{}\n{}".format(key, value['last-message']))
+                    imgui.pop_font()
+                    imgui.same_line()
+                    if value['new-message']:
+                        imgui.push_font(self.fonts_map['profile-fonts-Montserrat']['font-obj'])
+                        imgui.push_style_color(imgui.COLOR_TEXT, 135 / 255, 206 / 255, 235 / 255, 1)
+                        imgui.bullet()
+                        imgui.pop_style_color()
+                        imgui.pop_font()
+                    imgui.separator()
+            imgui.end_child()
+        imgui.end()
+
+    def frame_commands(self): 
+        if True:
+            self.user_login()
             if self.login:
-                imgui.text(self.client.username)
-                self.profile()   
-            imgui.end()
+                self.new_profile()
+            if self.display_chatbox:
+                self.new_chatbox()
+        else:
+            self.new_profile()
+            self.new_chatbox()
+
+        if False:
+            imgui.set_next_window_size(self.window_width, self.window_height)
+            imgui.set_next_window_position(0, 0)
+            if self.display_chatbox:
+                self.chat_box()
+            else:
+                imgui.get_style().window_rounding = 0
+                imgui.begin("mainwindow", flags=imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_COLLAPSE)
+                self.user_login() 
+                if self.login:
+                    imgui.text(self.client.username)
+                    self.new_profile()
+                    #self.profile()   
+                imgui.end()
 
     def show_frames(self):
         self.is_display_frame = self.display_frames(self.fonts_map)
@@ -280,5 +431,5 @@ class AppClient(Gui):
             self.client.stop()
 
 if __name__ == "__main__":   
-    client = AppClient(host='192.168.1.2')
+    client = AppClient(host='192.168.1.2', is_resizeable=True)
     client.start()

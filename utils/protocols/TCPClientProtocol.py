@@ -8,7 +8,7 @@ class TCPClientProtocol(asyncio.Protocol):
         super().__init__() 
         self.connection_made_callback = connection_made_callback
         self.data_received_callback = data_received_callback
-
+        
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self.connection_made_callback(transport)  
 
