@@ -22,7 +22,7 @@ class Client(object):
         self.udp_port: int = udp_port
         self.image: bytes = b''
         self.audio: bytes = b''
-        self.username: str = ""
+        self.username: str = "" 
         self.users_map: dict[str, dict[str, bool | str]] = {}
         self.users_chat_map: dict[str, dict[str, Queue | list]] = {} 
 
@@ -33,7 +33,7 @@ class Client(object):
         data = Message(sender=self.username, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), sender_peername=self.sockname, type=MessageType.CONNECTED) 
         self.tcp_transport.write(pickle.dumps(data))
 
-    def __tcp_data_received(self, data: bytes):
+    def __tcp_data_received(self, data: bytes): 
         data: Message = pickle.loads(data)
 
         if data.type == MessageType.CONNECTED:
@@ -51,9 +51,9 @@ class Client(object):
         elif data.type == MessageType.DISCONNECTED:
             del self.users_map[data.sender]
         elif data.type == MessageType.MESSAGE:  
-            if data.message:
+            if data.message: 
                 message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), data.sender, data.message)
-                self.users_chat_map[data.sender]['messages'].append(message) 
+                self.users_chat_map[data.sender]['messages'].append(message)  
 
     def __udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 
@@ -64,15 +64,16 @@ class Client(object):
 
     def __udp_datagram_received(self, data: bytes, addr: tuple):
         data: Message = pickle.loads(data) 
-        
-        self.image = self.image + data.image
-        if data.image_index == data.image_len:
-            try: 
-                # TODO: display video call
-                pass
-            except:
-                pass
-            self.image = b'' 
+        if data.image:
+            self.image = self.image + data.image
+            if data.image_index == data.image_len:
+                try: 
+                    pass
+                except:
+                    pass
+                self.image = b'' 
+        if data.audio:
+            pass
 
     def start(self):
         asyncio.set_event_loop(asyncio.new_event_loop())

@@ -14,13 +14,14 @@ from utils.models.MessageType import MessageType
 class VideoStream(object):
     def __init__(self, source: str | int) -> None:
         self.Q = Queue()
-        self.stopped = False
-        self.read_lock = Lock()
-        self.stream = cv2.VideoCapture(source)
-        
-        assert self.stream.isOpened(), "Unable to open source"
+        self.stream = None
+        self.source: str | int = source
+        self.stopped: bool = False
+        self.read_lock: Lock = Lock() 
         
     def start(self):
+        self.stream = cv2.VideoCapture(self.source)
+        assert self.stream.isOpened(), "Unable to open source"
         self.t = Thread(target=self.update, args=())
         self.t.daemon = True
         self.t.start()

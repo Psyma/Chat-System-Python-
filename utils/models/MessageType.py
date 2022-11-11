@@ -2,9 +2,9 @@ from enum import Enum
 
 class MessageType(Enum):
     DEFAULT = 0,
-    MESSAGE = 1, 
-    NON_MESSAGE = 2,
-    CONNECTED = 3,
-    DISCONNECTED = 4,
-    IMAGE = 5,
-    AUDIO = 6
+    IMAGE = 1,
+    AUDIO = 2
+    MESSAGE = 3, 
+    REGISTER = 4,
+    CONNECTED = 5, 
+    DISCONNECTED = 6,
