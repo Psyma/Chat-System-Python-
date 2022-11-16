@@ -23,6 +23,9 @@ class Client(object):
         self.image: bytes = b''
         self.audio: bytes = b''
         self.username: str = "" 
+        self.sockname: tuple = None
+        self.connected: bool = False
+        self.tcp_transport: asyncio.Transport = None
         self.users_map: dict[str, dict[str, bool | str]] = {}
         self.users_chat_map: dict[str, dict[str, Queue | list]] = {} 
 
@@ -30,7 +33,11 @@ class Client(object):
         self.tcp_transport = transport
         self.peername = transport.get_extra_info('peername')
         self.sockname = transport.get_extra_info('sockname') 
-        data = Message(sender=self.username, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), sender_peername=self.sockname, type=MessageType.CONNECTED) 
+        data = Message(
+            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+            sender_peername=self.sockname, 
+            type=MessageType.CONNECTED
+        ) 
         self.tcp_transport.write(pickle.dumps(data))
 
     def __tcp_data_received(self, data: bytes): 
@@ -54,12 +61,21 @@ class Client(object):
             if data.message: 
                 message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), data.sender, data.message)
                 self.users_chat_map[data.sender]['messages'].append(message)  
+        elif data.type == MessageType.REGISTER:
+            print(data.message)
+        elif data.type == MessageType.LOGIN:
+            print(data.message)
 
     def __udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 
         self.udp_peername = transport.get_extra_info('peername')
         self.udp_sockname = transport.get_extra_info('sockname') 
-        data = Message(sender=self.username, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), sender_peername=self.udp_sockname, type=MessageType.CONNECTED)
+        data = Message(
+            sender=self.username, 
+            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+            sender_peername=self.udp_sockname, 
+            type=MessageType.CONNECTED
+        )
         transport.sendto(pickle.dumps(data), self.udp_peername)
 
     def __udp_datagram_received(self, data: bytes, addr: tuple):
@@ -84,6 +100,7 @@ class Client(object):
         
         connect = self.loop.create_datagram_endpoint(lambda: UDPClientProtocol(self.__udp_connection_made, self.__udp_datagram_received), remote_addr=(self.host, self.udp_port))
         transport, protocol = self.loop.run_until_complete(connect)
+        self.connected = True
         self.loop.run_forever()
 
     def stop(self):

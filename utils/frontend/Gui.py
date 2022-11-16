@@ -9,7 +9,7 @@ class Gui(object):
         self.window_width = window_width
         self.window_height = window_height
         self.is_resizeable = is_resizeable
-        self.fonts_map = {}
+        self.fonts_map = {} 
 
     def glfw_init(self):
         window_name = self.window_name

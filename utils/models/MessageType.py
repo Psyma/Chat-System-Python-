@@ -8,3 +8,4 @@ class MessageType(Enum):
     REGISTER = 4,
     CONNECTED = 5, 
     DISCONNECTED = 6,
+    LOGIN = 7,

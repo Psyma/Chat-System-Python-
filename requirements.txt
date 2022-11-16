@@ -1,5 +1,4 @@
-pyaudio
-webrtcvad
+pyaudio 
 imgui[full]
 opencv-python
 imgui-datascience

@@ -3,9 +3,11 @@ import os
 import cv2
 import sys  
 import time
+import glfw
 import imgui 
 import socket
 import pickle
+import random
 import base64
 import pyaudio
 
@@ -17,7 +19,7 @@ CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(CUR_DIR, '..')
 sys.path.append(ROOT_DIR)
 
-from utils.frontend.Gui import Gui
+from utils.frontend.Gui import Gui 
 from utils.backend.Client import Client
 from utils.models.Message import Message
 from utils.models.MessageType import MessageType
@@ -42,56 +44,206 @@ class AppClient(Gui):
         FORMAT = pyaudio.paInt16 
         CHANNELS = 1
 
-        self.debug = True
-        self.to_user: str = "" 
-        self.password: str = ""
-        self.login: bool = False 
+        self.debug = False
+        self.to_user: str = ""   
         self.display_chatbox: bool = False
         self.is_display_frame: bool = True
         self.is_audio_call: bool = False
-        self.fonts_map = self.__set_fonts()
+        self.fonts_map: dict[str, dict[str, None | int | str]] = self.__set_fonts()
         self.client = Client(host=host, tcp_port=tcp_port, udp_port=udp_port)
         self.string_stream = StringStream()
         self.video_stream = VideoStream(0) 
-        self.audio_stream = AudioStream(MS, RATE, AUDIO, FORMAT, CHANNELS) 
+        self.audio_stream = AudioStream(MS, RATE, AUDIO, FORMAT, CHANNELS)    
+
+        self.password: str = ""  
+        self.login: bool = False
+        self.register: bool = False
+        self.register_username: str = ""
+        self.register_password: str = ""
+        self.register_password_confirm: str = ""
+        self.register_firstname: str = ""
+        self.register_middlename: str = ""
+        self.register_lastname: str = ""
 
     def start(self): 
         self.t = Thread(target=self.__show_frames, args=())
         self.t.start()
         while self.is_display_frame:
+            self.register = False
+            self.client.connected = False
             try:
-                if self.login:
-                    self.client.start()
+                self.client.start()  
             except: 
-                pass 
+                pass
             time.sleep(1) 
 
-    def frame_commands(self): 
-        def test_gui():
-            imgui.set_next_window_size(self.window_width * .50, self.window_height * .50)
-            imgui.set_next_window_position(0, 0)
-            imgui.get_style().window_rounding = 0
-            imgui.begin("window")
+    def frame_commands(self):   
+        if not self.client.connected:
+            imgui.set_next_window_size(400, 360)
+            imgui.set_next_window_position((self.window_width - 400) * .50, (self.window_height - 360) * .50)
+            imgui.begin("", flags=imgui.WINDOW_NO_COLLAPSE) 
+            imgui.push_font(self.fonts_map['profile-fonts-Drift-40']['font-obj']) 
+            text = "Server is offline!"
+            width, height = imgui.get_window_size()
+            text_width, text_height = imgui.calc_text_size(text)
+            imgui.set_cursor_pos_x((width - text_width) * 0.5)
+            imgui.set_cursor_pos_y((height - text_height) * 0.5)
+            r = random.uniform(0, 1)
+            g = random.uniform(0, 1)
+            b = random.uniform(0, 1)
+            imgui.push_style_color(imgui.COLOR_TEXT, r, g, b) 
+            imgui.text_wrapped(text)  
+            imgui.pop_style_color()
+            imgui.pop_font()
             imgui.end()
-
-        test = False
-        if self.debug:
-            if test:
-                test_gui()
-            else:
-                self.__profile()
-                self.__chatbox() 
         else:
-            self.__user_login()
+            if self.register:
+                self.__register()
+            else:
+                if not self.login:
+                    self.__login() 
             if self.login:
-                self.__profile()
+                self.__profile() 
             if self.display_chatbox:
                 self.__chatbox()  
-    
+            
+    def __login(self):
+        imgui.set_next_window_size(400, 360)
+        imgui.set_next_window_position((self.window_width - 400) * .50, (self.window_height - 360) * .50)
+        imgui.begin("Account", flags= imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_NO_SCROLLBAR) 
+
+        width, height = imgui.get_window_size()
+        imgui.push_font(self.fonts_map['profile-fonts-Drift-40']['font-obj']) 
+        text = "Account Login"
+        text_width, text_height = imgui.calc_text_size(text)
+        imgui.set_cursor_pos_x((width - text_width) * 0.5)
+        imgui.text_wrapped(text)
+        imgui.pop_font()
+        border_height = 85
+        imgui.set_cursor_pos_y((height - border_height) * .5)
+        imgui.begin_child("1", border=True, height=border_height)
+        ret, value = imgui.input_text(label="Username", value=self.client.username, buffer_length=20, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+        if not ret:
+            self.client.username = value 
+        
+        ret, value = imgui.input_text(label="Password", value=self.password, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE | imgui.INPUT_TEXT_PASSWORD)
+        if not ret:
+            self.password = value
+
+        if imgui.button("Register"): 
+            self.register = True
+        imgui.same_line()
+        if imgui.button("Login"):
+            if self.client.username != "" and self.password != "":
+                self.login = True
+                data = Message(
+                    sender=self.client.username, 
+                    sender_peername=self.client.sockname,
+                    timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                    type=MessageType.LOGIN
+                )  
+                self.__send_string(data)
+        imgui.same_line()
+        if imgui.button("Close"):
+            self.client.stop()
+            self.is_display_frame = False
+            glfw.terminate()
+            sys.exit(1)
+        
+        if ret and self.client.username != "" and self.password != "":
+            self.login = True 
+            data = Message(
+                sender=self.client.username, 
+                sender_peername=self.client.sockname,
+                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                type=MessageType.LOGIN
+            ) 
+            print(self.client.sockname)
+            self.__send_string(data)
+
+        imgui.end_child() 
+        imgui.end() 
+
+    def __register(self):
+        imgui.set_next_window_size(400, 360)
+        imgui.set_next_window_position((self.window_width - 400) * .50, (self.window_height - 360) * .50)
+        imgui.begin("Register", flags= imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_NO_SCROLLBAR) 
+        
+        width, height = imgui.get_window_size()
+        imgui.push_font(self.fonts_map['profile-fonts-Drift-40']['font-obj']) 
+        text = "Create an account"
+        text_width, text_height = imgui.calc_text_size(text)
+        imgui.set_cursor_pos_x((width - text_width) * 0.5)
+        imgui.text_wrapped(text)
+        imgui.pop_font()
+        border_height = 175
+        imgui.set_cursor_pos_y((height - border_height) * .5)
+        imgui.begin_child("1", border=True, height=border_height)
+        
+        ret, value = imgui.input_text(label="Username", value=self.register_username, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+        if not ret:
+            self.register_username = value
+        
+        ret, value = imgui.input_text(label="Password", value=self.register_password, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE | imgui.INPUT_TEXT_PASSWORD)
+        if not ret:
+            self.register_password = value
+        ret, value = imgui.input_text(label="Password Confirm", value=self.register_password_confirm, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE | imgui.INPUT_TEXT_PASSWORD)
+        if not ret:
+            self.register_password_confirm = value
+        
+        ret, value = imgui.input_text(label="First Name", value=self.register_firstname, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+        if not ret:
+            self.register_firstname = value
+        
+        ret, value = imgui.input_text(label="Middle Name", value=self.register_middlename, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+        if not ret:
+            self.register_middlename = value
+        
+        ret, value = imgui.input_text(label="Last Name", value=self.register_lastname, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+        if not ret:
+            self.register_lastname = value
+
+        if imgui.button("Register"): 
+            if self.register_username != "" and \
+                self.register_password != "" and \
+                self.register_password_confirm != "" and \
+                self.register_firstname != "" and \
+                self.register_middlename != "" and \
+                self.register_lastname != "":
+                if self.register_password == self.register_password_confirm:
+                    data = Message(
+                        timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'),
+                        register_username=self.register_username,
+                        register_password=self.register_password,
+                        register_firstname=self.register_firstname,
+                        register_middlename=self.register_middlename,
+                        register_lastname=self.register_lastname,
+                        sender_peername=self.client.sockname,
+                        type=MessageType.REGISTER
+                    )
+                    self.data = data
+                    self.string_stream.send(data, self.client.tcp_transport)
+
+            self.register = False
+            self.register_username: str = ""
+            self.register_password: str = ""
+            self.register_password_confirm: str = ""
+            self.register_firstname: str = ""
+            self.register_middlename: str = ""
+            self.register_lastname: str = "" 
+
+        imgui.same_line() 
+        if imgui.button("Back"): 
+            self.register = False
+        
+        imgui.end_child() 
+        imgui.end()
+
     def __send_string(self, data: Message):
         self.string_stream.send(data, self.client.tcp_transport)
-        message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), "You", data.message) 
-        self.client.users_chat_map[data.receiver]['messages'].append(message)
+        if data.type == MessageType.MESSAGE:
+            message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), "You", data.message)  
+            self.client.users_chat_map[data.receiver]['messages'].append(message)
 
     def __send_image(self, frame, size = 65536): 
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -99,24 +251,28 @@ class AppClient(Gui):
 
         chunks = [frames[i:i+size] for i in range(0,len(frames), size)] 
         for i, chunk in enumerate(chunks):
-            data = Message(image=chunk, 
-                            image_index=i, 
-                            image_len=len(chunks) - 1,  
-                            sender=self.client.username, 
-                            receiver=self.to_user, 
-                            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                            type=MessageType.MESSAGE) 
+            data = Message(
+                image=chunk, 
+                image_index=i, 
+                image_len=len(chunks) - 1,  
+                sender=self.client.username, 
+                receiver=self.to_user, 
+                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                type=MessageType.MESSAGE
+            ) 
                                 
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, size)
             self.socket.sendto(pickle.dumps(data), self.client.udp_peername)
     
     def __send_audio(self, frame, size: int = 65536):
-        data = Message(audio=frame, 
-                        sender=self.client.username, 
-                        receiver=self.to_user, 
-                        timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                        type=MessageType.MESSAGE) 
+        data = Message(
+            audio=frame, 
+            sender=self.client.username, 
+            receiver=self.to_user, 
+            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+            type=MessageType.MESSAGE
+        ) 
         
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, size)
@@ -145,7 +301,7 @@ class AppClient(Gui):
                 "font-size" : 20,
                 "font-path" : ROOT_DIR + "/assets/Bebas-Regular.ttf"
             },
-            "profile-fonts-Drift" : {
+            "profile-fonts-Drift": {
                 "font-obj" : None,
                 "font-size" : 35,
                 "font-path" : ROOT_DIR + "/assets/Drift.ttf"
@@ -165,41 +321,15 @@ class AppClient(Gui):
                 "font-size" : 25,
                 "font-path" : ROOT_DIR + "/assets/Drift.ttf"
             },
+            "profile-fonts-Drift-40" : {
+                "font-obj" : None,
+                "font-size" : 40,
+                "font-path" : ROOT_DIR + "/assets/Drift.ttf"
+            },
         } 
 
         return fonts_map
 
-    def __user_login(self):
-        if not self.login:
-            imgui.set_next_window_position((self.window_width / 2) - 150, (self.window_height / 2) - 50)
-            imgui.set_next_window_size(300, 100)
-            imgui.open_popup("Login")
-        if imgui.begin_popup_modal(title="Login", visible=None, flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE | imgui.WINDOW_NO_MOVE)[0]:
-            imgui.text("Username:")
-            imgui.same_line()
-            ret, value = imgui.input_text(label=" ", value=self.client.username, buffer_length=120, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
-            if not ret:
-                self.client.username = value
-            imgui.text("Password:")
-            imgui.same_line()
-            ret, value = imgui.input_text(label="  ", value=self.password, buffer_length=120, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE | imgui.INPUT_TEXT_PASSWORD)
-            if not ret:
-                self.password = value
-
-            imgui.set_cursor_pos_y(73)
-            imgui.set_cursor_pos_x(100)
-            if imgui.button("Login", width=50):
-                pass
-            imgui.same_line()
-            if imgui.button("Exit", width=50):
-                pass
-
-            if ret and self.client.username != "" and self.password != "":
-                self.login = True
-                self.user = self.client.username
-                imgui.close_current_popup()
-            imgui.end_popup()
-    
     def __chatbox(self):
         imgui.set_next_window_size(self.window_width - 299, self.window_height)
         imgui.set_next_window_position(299, 0)
@@ -248,12 +378,14 @@ class AppClient(Gui):
             changed, text_val = imgui.input_text("Message", "", 100, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
             if changed:
                 if text_val: 
-                    data = Message(message=text_val, 
-                                sender=self.client.username, 
-                                receiver=self.to_user, 
-                                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                                sender_peername=self.client.sockname, 
-                                type=MessageType.MESSAGE)
+                    data = Message(
+                        message=text_val, 
+                        sender=self.client.username, 
+                        receiver=self.to_user, 
+                        timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                        sender_peername=self.client.sockname, 
+                        type=MessageType.MESSAGE
+                    )
                     self.__send_string(data)
                 imgui.set_keyboard_focus_here()
             imgui.same_line()
@@ -349,9 +481,8 @@ class AppClient(Gui):
 
     def __show_frames(self):
         self.is_display_frame = self.display_frames(self.fonts_map)
-        if self.login:
-            self.client.stop()
-
+        self.client.stop()
+    
 if __name__ == "__main__":    
-    client = AppClient(host='192.168.1.2', is_resizeable=True)
-    client.start()
+    client = AppClient(host='192.168.1.8', is_resizeable=True)
+    client.start() 

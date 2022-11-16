@@ -11,6 +11,11 @@ class Message(object):
             receiver: str = None, 
             timestamp: str = None, 
             sender_peername: tuple = None, 
+            register_username: str = None,
+            register_password: str = None,
+            register_firstname: str = None,
+            register_middlename: str = None,
+            register_lastname: str = None,
             type: MessageType = MessageType.DEFAULT) -> None:
             
         self.image = image
@@ -22,4 +27,9 @@ class Message(object):
         self.receiver = receiver
         self.timestamp = timestamp
         self.sender_peername = sender_peername 
+        self.register_username = register_username
+        self.register_password = register_password 
+        self.register_firstname = register_firstname
+        self.register_middlename = register_middlename
+        self.register_lastname = register_lastname
         self.type = type
