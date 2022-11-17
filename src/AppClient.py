@@ -10,6 +10,7 @@ import pickle
 import random
 import base64
 import pyaudio
+import numpy as np
 
 from threading import Thread 
 from datetime import datetime 
@@ -64,6 +65,10 @@ class AppClient(Gui):
         self.register_firstname: str = ""
         self.register_middlename: str = ""
         self.register_lastname: str = ""
+
+        # test
+        self.client.username = "lukie"
+        self.password = "1"
 
     def start(self): 
         self.t = Thread(target=self.__show_frames, args=())
@@ -300,7 +305,7 @@ class AppClient(Gui):
                 "font-obj" : None,
                 "font-size" : 20,
                 "font-path" : ROOT_DIR + "/assets/Bebas-Regular.ttf"
-            },
+            }, 
             "profile-fonts-Drift": {
                 "font-obj" : None,
                 "font-size" : 35,
@@ -314,6 +319,11 @@ class AppClient(Gui):
             "profile-fonts-Maladewa-30" : {
                 "font-obj" : None,
                 "font-size" : 30,
+                "font-path" : ROOT_DIR + "/assets/Maladewa.ttf"
+            },
+            "profile-fonts-Maladewa-x" : {
+                "font-obj" : None,
+                "font-size" : 27,
                 "font-path" : ROOT_DIR + "/assets/Maladewa.ttf"
             },
             "profile-fonts-Drift-25" : {
@@ -350,13 +360,18 @@ class AppClient(Gui):
                     if imgui.is_item_hovered():
                         imgui.set_tooltip("Juan Dela Organization")
                 else:
-                    imgui.text_wrapped(self.__truncate(self.to_user, 25))
+                    imgui.text_wrapped(self.__truncate(self.client.fullname_map[self.to_user], 25))
                     imgui.pop_font()
                     if imgui.is_item_hovered():
-                        imgui.set_tooltip(self.to_user)
-                imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)
-                imgui.text_wrapped("Active now")
-                imgui.pop_style_color() 
+                        imgui.set_tooltip(self.client.fullname_map[self.to_user])
+                if self.client.users_map[self.to_user]['online']:
+                    imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)
+                    imgui.text_wrapped("Active now")
+                    imgui.pop_style_color() 
+                else:
+                    imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0)
+                    imgui.text_wrapped("Offline")
+                    imgui.pop_style_color() 
                 imgui.end_child()
 
             if True:
@@ -387,6 +402,7 @@ class AppClient(Gui):
                         type=MessageType.MESSAGE
                     )
                     self.__send_string(data)
+                    self.client.users_map[self.to_user]['last-message'] = text_val
                 imgui.set_keyboard_focus_here()
             imgui.same_line()
             imgui.button("Add files")
@@ -401,13 +417,13 @@ class AppClient(Gui):
                     if user == self.to_user:  
                         for i in range(len(value['messages']) - 1, -1, -1):
                             data = value['messages'][i] 
-                            if str(search_text_val).casefold() in data:
+                            if str(search_text_val).casefold() in str(data).casefold():
                                 if "] [You]:" in data: 
-                                    imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0) 
+                                    imgui.push_style_color(imgui.COLOR_TEXT, 1, 1, 1) 
                                     imgui.text_wrapped(data)  
                                     imgui.pop_style_color()
                                 else:
-                                    imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0) 
+                                    imgui.push_style_color(imgui.COLOR_TEXT, 0, 106 / 255, 1) 
                                     imgui.text_wrapped(data)  
                                     imgui.pop_style_color()   
 
@@ -422,24 +438,22 @@ class AppClient(Gui):
         imgui.begin("Profile", flags= imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_NO_SCROLLBAR) 
 
         if True:
-            imgui.begin_child("1", border=True, height=130)
-            img = cv2.imread(ROOT_DIR + "/assets/default_profile.png")
-            imgui_cv.image(img, width=65)
+            imgui.begin_child("1", border=True, height=130) 
+            img = cv2.imread(ROOT_DIR + "/assets/default_profile.png")  
+            imgui_cv.image(img, width=65) 
             imgui.same_line()
             imgui.begin_child("1.1", border=True, height=65)
-            imgui.push_font(self.fonts_map['profile-fonts-Maladewa-30']['font-obj']) 
-            if self.debug:
-                imgui.text_wrapped(self.__truncate("John Michael Organism", 20)) 
-                imgui.pop_font()
-                if imgui.is_item_hovered():
-                    imgui.set_tooltip("John Michael Organism")
-                imgui.text_wrapped("Active now")
+            imgui.push_font(self.fonts_map['profile-fonts-Maladewa-30']['font-obj'])  
+            if self.client.username in self.client.fullname_map:
+                imgui.text_wrapped(self.__truncate(self.client.fullname_map[self.client.username], 20)) 
             else:
-                imgui.text_wrapped(self.__truncate(self.client.username, 20)) 
-                imgui.pop_font()
-                if imgui.is_item_hovered():
-                    imgui.set_tooltip(self.client.username)
-                imgui.text_wrapped("Active now")
+                imgui.text(self.__truncate("-"*15, 20)) 
+            imgui.pop_font()
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(self.client.fullname_map[self.client.username])
+            imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)
+            imgui.text_wrapped("Active now")
+            imgui.pop_style_color()
             imgui.end_child()
             changed, text_val = imgui.input_text("Search", "", 100, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
             imgui.button("Chats")
@@ -456,26 +470,39 @@ class AppClient(Gui):
             if changed:
                 imgui.set_keyboard_focus_here()
             for i, (key, value) in enumerate(self.client.users_map.items()):
-                if str(text_val).casefold() in key.casefold():
-                    imgui.push_font(self.fonts_map['profile-fonts-Drift']['font-obj'])
-                    if value['online']:
-                        imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0, 1)
-                    else:
-                        imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0, 1)
-                    imgui.set_cursor_pos_x(5)
-                    imgui.push_id(key)
-                    clicked, _ = imgui.selectable(label=key[0], flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS | imgui.SELECTABLE_DONT_CLOSE_POPUPS)
-                    if clicked:
-                        self.to_user = key 
-                        self.display_chatbox = True
-                    imgui.pop_id()
-                    imgui.pop_font()
-                    imgui.pop_style_color()
-                    imgui.same_line()
-                    imgui.set_cursor_pos_x(40)
-                    imgui.push_font(self.fonts_map['profile-fonts-Bebas']['font-obj'])
-                    imgui.text_wrapped("{}\n{}".format(key, value['last-message']))
-                    imgui.pop_font()
+                if key == self.client.username:
+                    continue
+                if str(text_val).casefold() in key.casefold():   
+                    if key in self.client.fullname_map:
+                        imgui.push_font(self.fonts_map['profile-fonts-Drift']['font-obj']) 
+                        if int(value['online']):
+                            imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0, 1)
+                        else:
+                            imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0, 1) 
+                        imgui.push_id(str(i) + key)
+                        clicked, _ = imgui.selectable(label=self.client.fullname_map[key][0], flags=imgui.SELECTABLE_SPAN_ALL_COLUMNS | imgui.SELECTABLE_DONT_CLOSE_POPUPS)
+                        if clicked:
+                            self.to_user = key 
+                            self.display_chatbox = True
+                        imgui.pop_id()
+                        imgui.pop_font()
+                        imgui.pop_style_color()
+                        
+                        imgui.same_line()
+                        imgui.set_cursor_pos_x(40)
+                        if imgui.core.is_item_clicked(0):
+                            self.to_user = key 
+                            self.display_chatbox = True
+                        imgui.begin_child(str(i) + "3", border=False, height=50)  
+                        imgui.push_font(self.fonts_map['profile-fonts-Maladewa-x']['font-obj'])   
+                        imgui.text(self.client.fullname_map[key]) 
+                        imgui.pop_font() 
+                        if type(value['last-message']) == type(None):
+                            imgui.text_colored("-", 102 / 255, 99 / 255, 92 / 255)
+                        else:
+                            imgui.text_colored(self.__truncate(value['last-message'], 30), 102 / 255, 99 / 255, 92 / 255)  
+                        imgui.end_child() 
+
             imgui.end_child()
         imgui.end()
 

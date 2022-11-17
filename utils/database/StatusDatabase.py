@@ -6,16 +6,19 @@ from utils.models.StatusModel import StatusModel
 Base = declarative_base()
 
 class StatusTable(Base):
-    __tablename__ = "status"
-    id = Column(Integer, primary_key=True, auto_increment=True)
-    username = Column(String)
+    __tablename__ = "status" 
+    username = Column(String, primary_key=True)
     isonline = Column(Integer)
-    message = Column(Integer)
+    message = Column(String)
+    new_message = Column(Integer)
+    fullname = Column(String)
 
     def __init__(self, model: StatusModel) -> None:
         self.username = model.username
         self.isonline = model.isonline
         self.message = model.message
+        self.new_message = model.new_message
+        self.fullname = model.fullname
 
 class StatusDatabase(): 
     def __init__(self, session, engine) -> None:
@@ -31,10 +34,10 @@ class StatusDatabase():
     def list(self) -> list[StatusTable]:
         return list(self.session.query(self.model))
 
-    def get(self, id) -> StatusTable:
+    def get(self, id: int) -> StatusTable:
         return self.session.query(self.model).get(id)
 
-    def update(self, id, **fields):
+    def update(self, id: str, **fields):
         obj = self.get(id)
         for field, value in fields.items():
             obj.__setattr__(field, value)

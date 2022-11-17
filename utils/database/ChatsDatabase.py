@@ -7,13 +7,19 @@ Base = declarative_base()
 
 class ChatsTable(Base):
     __tablename__ = "chats"
-    id = Column(Integer, primary_key=True, auto_increment=True)
-    username = Column(String)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sender = Column(String)
+    receiver = Column(String)
     message = Column(String)
+    timestamp = Column(String)
+    peername = Column(String)
 
     def __init__(self, model: ChatsModel) -> None:
-        self.username = model.username
+        self.sender = model.sender
+        self.receiver = model.receiver
         self.message = model.message
+        self.timestamp = model.timestamp
+        self.peername = model.peername
 
 class ChatsDatabase(): 
     def __init__(self, session, engine) -> None:
@@ -29,10 +35,10 @@ class ChatsDatabase():
     def list(self) -> list[ChatsTable]:
         return list(self.session.query(self.model))
 
-    def get(self, id) -> ChatsTable:
+    def get(self, id: int) -> ChatsTable:
         return self.session.query(self.model).get(id)
 
-    def update(self, id, **fields):
+    def update(self, id: int, **fields):
         obj = self.get(id)
         for field, value in fields.items():
             obj.__setattr__(field, value)

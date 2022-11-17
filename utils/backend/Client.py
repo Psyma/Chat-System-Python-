@@ -23,6 +23,7 @@ class Client(object):
         self.image: bytes = b''
         self.audio: bytes = b''
         self.username: str = "" 
+        self.fullname_map: dict[str, str] = {}
         self.sockname: tuple = None
         self.connected: bool = False
         self.tcp_transport: asyncio.Transport = None
@@ -43,12 +44,7 @@ class Client(object):
     def __tcp_data_received(self, data: bytes): 
         data: Message = pickle.loads(data)
 
-        if data.type == MessageType.CONNECTED:
-            self.users_map[data.sender] = {
-                'online': True,
-                'new-message': True,
-                'last-message': data.message
-            }
+        if data.type == MessageType.CONNECTED: 
             if data.sender not in self.users_chat_map:   
                 self.users_chat_map[data.sender] = {
                     'images': Queue(),
@@ -56,15 +52,51 @@ class Client(object):
                     'messages': list(),
             }
         elif data.type == MessageType.DISCONNECTED:
-            del self.users_map[data.sender]
+            for user, value in self.users_map.items():
+                if user == data.sender:
+                    value['online'] = False 
         elif data.type == MessageType.MESSAGE:  
             if data.message: 
-                message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), data.sender, data.message)
+                name = self.fullname_map[data.sender]
+                message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), name.split(" ")[0], data.message)
                 self.users_chat_map[data.sender]['messages'].append(message)  
+                self.users_map[data.sender]['last-message'] = data.message 
+                temp = {}
+                temp[data.sender] = self.users_map[data.sender]
+                for key, value in self.users_map.items():
+                    if key != data.sender:
+                        temp[key] = value
+                self.users_map = temp
         elif data.type == MessageType.REGISTER:
             print(data.message)
         elif data.type == MessageType.LOGIN:
             print(data.message)
+        elif data.type == MessageType.CONNECTED_USERS: 
+            for user in data.connected_users:  
+                self.fullname_map[user.username] = user.fullname
+                self.users_map[user.username] = {
+                    'online': user.isonline,
+                    'new-message': user.new_message,
+                    'last-message': user.message
+                } 
+                if user.username not in self.users_chat_map:
+                    self.users_chat_map[user.username] = {
+                        'images': Queue(),
+                        'audios': Queue(),
+                        'messages': list(),
+                }
+        elif data.type == MessageType.CHATS_HISTORY:   
+            for user in data.history_messages:
+                if user.sender == self.username:
+                    key = user.receiver
+                    message = "[{}] [{}]: {}".format(user.timestamp, 'You', user.message)
+                    self.users_chat_map[key]['messages'].append(message)
+                elif user.receiver == self.username:
+                    key = user.sender
+                    name = self.fullname_map[user.sender]
+                    message = "[{}] [{}]: {}".format(user.timestamp, name.split(" ")[0], user.message)  
+                    self.users_chat_map[key]['messages'].append(message)  
+                    self.users_map[user.sender]['last-message'] = user.message
 
     def __udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 

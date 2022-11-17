@@ -26,18 +26,18 @@ class UserDatabase():
         self.session: Session = session
         self.model = UserTable
 
-    def create(self, model: UserModel):
+    def create(self, model: UserModel): 
         obj = self.model(model)
         self.session.add(obj)
-        self.session.commit()
+        self.session.commit() 
 
     def list(self) -> list[UserTable]:
         return list(self.session.query(self.model))
 
-    def get(self, id) -> UserTable:
+    def get(self, id: str) -> UserTable:
         return self.session.query(self.model).get(id)
 
-    def update(self, id, **fields):
+    def update(self, id: str, **fields):
         obj = self.get(id)
         for field, value in fields.items():
             obj.__setattr__(field, value)
