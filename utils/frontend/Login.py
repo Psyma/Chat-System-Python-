@@ -37,8 +37,8 @@ class Login(Gui):
         self.is_display_frame = True
         self.fonts_map = self.__set_fonts() 
 
-        self.username = ""
-        self.password = ""
+        self.username = "tata"
+        self.password = "1"
         self.login: bool = False
         self.register: bool = False
         self.register_username: str = ""

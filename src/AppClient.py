@@ -65,7 +65,10 @@ class AppClient(Gui):
         self.register_firstname: str = ""
         self.register_middlename: str = ""
         self.register_lastname: str = ""  
-        self.connected_once = False 
+        self.connected = False 
+        self.delay = 4
+        self.counter = 1
+        self.delay_counter = 1
 
     def start(self): 
         self.t = Thread(target=self.__show_frames, args=())
@@ -73,6 +76,7 @@ class AppClient(Gui):
         while self.is_display_frame:
             self.register = False
             self.client.connected = False
+            self.connected = False
             try:
                 self.client.start()   
             except: 
@@ -80,8 +84,8 @@ class AppClient(Gui):
             time.sleep(1) 
 
     def frame_commands(self):   
-        if self.client.connected and not self.connected_once:
-            self.connected_once = True
+        if self.client.connected and not self.connected:
+            self.connected = True
             data = Message(
                 sender=self.client.username, 
                 sender_peername=self.client.sockname,
@@ -89,142 +93,46 @@ class AppClient(Gui):
                 type=MessageType.CONNECTED
             )  
             self.__send_string(data)
-            
+        
+        
         self.__profile() 
         if self.display_chatbox:
-            self.__chatbox()  
+            self.__chatbox()
+        self.__loading()  
+
+    def __loading(self):
+        imgui.set_next_window_size(165, 100)
+        imgui.set_next_window_position((self.window_width - 165) * .50, (self.window_height - 100) * .50)
+        if not self.connected:
+            imgui.push_id('info-3')
+            imgui.open_popup("[INFO]")
+        if imgui.begin_popup_modal("[INFO]", flags=imgui.WINDOW_NO_RESIZE)[0]: 
+            text = "Conneting to server"
+            width, height = imgui.get_window_size()
+            text_width, text_height = imgui.calc_text_size(text)
+            imgui.set_cursor_pos_y(35) 
+            imgui.set_cursor_pos_x((width - text_width) * 0.5)
+            imgui.text(text)
+            imgui.set_cursor_pos_y((height / 2) + 10)
             
-    def __login(self):
-        imgui.set_next_window_size(400, 360)
-        imgui.set_next_window_position((self.window_width - 400) * .50, (self.window_height - 360) * .50)
-        imgui.begin("Account", flags= imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_NO_SCROLLBAR) 
+            self.delay_counter = self.delay_counter + 1 
+            for i in range(1, 8, 1):
+                if i == self.counter: 
+                    imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)  
+                    imgui.bullet()
+                    imgui.pop_style_color()
+                else:
+                    imgui.bullet()
 
-        width, height = imgui.get_window_size()
-        imgui.push_font(self.fonts_map['profile-fonts-Drift-40']['font-obj']) 
-        text = "Account Login"
-        text_width, text_height = imgui.calc_text_size(text)
-        imgui.set_cursor_pos_x((width - text_width) * 0.5)
-        imgui.text_wrapped(text)
-        imgui.pop_font()
-        border_height = 85
-        imgui.set_cursor_pos_y((height - border_height) * .5)
-        imgui.begin_child("1", border=True, height=border_height)
-        ret, value = imgui.input_text(label="Username", value=self.client.username, buffer_length=20, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
-        if not ret:
-            self.client.username = value 
-        
-        ret, value = imgui.input_text(label="Password", value=self.password, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE | imgui.INPUT_TEXT_PASSWORD)
-        if not ret:
-            self.password = value
-
-        if imgui.button("Register"): 
-            self.register = True
-        imgui.same_line()
-        if imgui.button("Login"):
-            if self.client.username != "" and self.password != "":
-                self.login = True
-                data = Message(
-                    sender=self.client.username, 
-                    sender_peername=self.client.sockname,
-                    timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                    type=MessageType.LOGIN
-                )  
-                self.__send_string(data)
-        imgui.same_line()
-        if imgui.button("Close"):
-            self.client.stop()
-            self.is_display_frame = False
-            glfw.terminate()
-            sys.exit(1)
-        
-        if ret and self.client.username != "" and self.password != "":
-            self.login = True 
-            data = Message(
-                sender=self.client.username, 
-                sender_peername=self.client.sockname,
-                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                type=MessageType.LOGIN
-            ) 
-            print(self.client.sockname)
-            self.__send_string(data)
-
-        imgui.end_child() 
-        imgui.end() 
-
-    def __register(self):
-        imgui.set_next_window_size(400, 360)
-        imgui.set_next_window_position((self.window_width - 400) * .50, (self.window_height - 360) * .50)
-        imgui.begin("Register", flags= imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_NO_SCROLLBAR) 
-        
-        width, height = imgui.get_window_size()
-        imgui.push_font(self.fonts_map['profile-fonts-Drift-40']['font-obj']) 
-        text = "Create an account"
-        text_width, text_height = imgui.calc_text_size(text)
-        imgui.set_cursor_pos_x((width - text_width) * 0.5)
-        imgui.text_wrapped(text)
-        imgui.pop_font()
-        border_height = 175
-        imgui.set_cursor_pos_y((height - border_height) * .5)
-        imgui.begin_child("1", border=True, height=border_height)
-        
-        ret, value = imgui.input_text(label="Username", value=self.register_username, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
-        if not ret:
-            self.register_username = value
-        
-        ret, value = imgui.input_text(label="Password", value=self.register_password, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE | imgui.INPUT_TEXT_PASSWORD)
-        if not ret:
-            self.register_password = value
-        ret, value = imgui.input_text(label="Password Confirm", value=self.register_password_confirm, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE | imgui.INPUT_TEXT_PASSWORD)
-        if not ret:
-            self.register_password_confirm = value
-        
-        ret, value = imgui.input_text(label="First Name", value=self.register_firstname, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
-        if not ret:
-            self.register_firstname = value
-        
-        ret, value = imgui.input_text(label="Middle Name", value=self.register_middlename, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
-        if not ret:
-            self.register_middlename = value
-        
-        ret, value = imgui.input_text(label="Last Name", value=self.register_lastname, buffer_length=50, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
-        if not ret:
-            self.register_lastname = value
-
-        if imgui.button("Register"): 
-            if self.register_username != "" and \
-                self.register_password != "" and \
-                self.register_password_confirm != "" and \
-                self.register_firstname != "" and \
-                self.register_middlename != "" and \
-                self.register_lastname != "":
-                if self.register_password == self.register_password_confirm:
-                    data = Message(
-                        timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'),
-                        register_username=self.register_username,
-                        register_password=self.register_password,
-                        register_firstname=self.register_firstname,
-                        register_middlename=self.register_middlename,
-                        register_lastname=self.register_lastname,
-                        sender_peername=self.client.sockname,
-                        type=MessageType.REGISTER
-                    )
-                    self.data = data
-                    self.string_stream.send(data, self.client.tcp_transport)
-
-            self.register = False
-            self.register_username: str = ""
-            self.register_password: str = ""
-            self.register_password_confirm: str = ""
-            self.register_firstname: str = ""
-            self.register_middlename: str = ""
-            self.register_lastname: str = "" 
-
-        imgui.same_line() 
-        if imgui.button("Back"): 
-            self.register = False
-        
-        imgui.end_child() 
-        imgui.end()
+            if self.counter == 7:
+                if self.delay_counter == self.delay:
+                    self.counter = 0
+            if self.delay_counter == self.delay:
+                self.delay_counter = 0
+                self.counter = self.counter + 1
+            
+            imgui.end_popup()
+            imgui.pop_id()
 
     def __send_string(self, data: Message):
         self.string_stream.send(data, self.client.tcp_transport)
@@ -385,6 +293,13 @@ class AppClient(Gui):
                     )
                     self.__send_string(data)
                     self.client.users_map[self.to_user]['last-message'] = text_val
+                    self.client.users_map[self.to_user]['new-message'] = 1
+                    temp = {}
+                    temp[data.receiver] = self.client.users_map[data.receiver]
+                    for key, value in self.client.users_map.items():
+                        if key != data.receiver:
+                            temp[key] = value
+                    self.client.users_map = temp 
                 imgui.set_keyboard_focus_here()
             imgui.same_line()
             imgui.button("Add files")

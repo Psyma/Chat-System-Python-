@@ -44,7 +44,7 @@ class Client(object):
                     'images': Queue(),
                     'audios': Queue(),
                     'messages': list(),
-            }
+                }
         elif data.type == MessageType.DISCONNECTED:
             for user, value in self.users_map.items():
                 if user == data.sender:
@@ -60,7 +60,7 @@ class Client(object):
                 for key, value in self.users_map.items():
                     if key != data.sender:
                         temp[key] = value
-                self.users_map = temp
+                self.users_map = temp 
         elif data.type == MessageType.REGISTER:
             print(data.message)
         elif data.type == MessageType.LOGIN:
@@ -68,11 +68,15 @@ class Client(object):
         elif data.type == MessageType.CONNECTED_USERS: 
             for user in data.connected_users:  
                 self.fullname_map[user.username] = user.fullname
-                self.users_map[user.username] = {
-                    'online': user.isonline,
-                    'new-message': user.new_message,
-                    'last-message': user.message
-                } 
+                if user.username in self.users_map:
+                    self.users_map[user.username]['online'] = user.isonline
+                    self.users_map[user.username]['new-message'] = user.new_message
+                else:
+                    self.users_map[user.username] = {
+                        'online': user.isonline,
+                        'new-message': user.new_message,
+                        'last-message': None
+                    } 
                 if user.username not in self.users_chat_map:
                     self.users_chat_map[user.username] = {
                         'images': Queue(),
@@ -80,17 +84,18 @@ class Client(object):
                         'messages': list(),
                 }
         elif data.type == MessageType.CHATS_HISTORY:   
-            for user in data.history_messages:
+            for user in data.history_messages: 
                 if user.sender == self.username:
                     key = user.receiver
                     message = "[{}] [{}]: {}".format(user.timestamp, 'You', user.message)
-                    self.users_chat_map[key]['messages'].append(message)
+                    self.users_chat_map[key]['messages'].append(message) 
+                    self.users_map[user.receiver]['last-message'] = user.message  
                 elif user.receiver == self.username:
                     key = user.sender
                     name = self.fullname_map[user.sender]
                     message = "[{}] [{}]: {}".format(user.timestamp, name.split(" ")[0], user.message)  
                     self.users_chat_map[key]['messages'].append(message)  
-                    self.users_map[user.sender]['last-message'] = user.message
+                    self.users_map[user.sender]['last-message'] = user.message  
 
     def __udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 

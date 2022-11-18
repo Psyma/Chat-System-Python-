@@ -38,6 +38,11 @@ class Server(object):
         self.userdb = UserDatabase(session=session, engine=engine)
         self.chatsdb = ChatsDatabase(session=session, engine=engine)
         self.statusdb = StatusDatabase(session=session, engine=engine)  
+        for user in self.userdb.list(): 
+            fields = {
+                'isonline': 0,
+            }
+            self.statusdb.update(user.username, **fields)
 
     async def __connected(self): 
         for peername1, transport in list(self.transport_map.items()):
@@ -101,7 +106,7 @@ class Server(object):
             )
             for sender, peername in self.sender_peername_map.items():
                 self.transport_map[peername].write(pickle.dumps(status_response)) 
-                if data.sender_peername == peername:
+                if data.sender == sender:
                     self.transport_map[peername].write(pickle.dumps(chats_response)) 
         elif data.type == MessageType.MESSAGE: 
             fields = {
@@ -200,10 +205,5 @@ class Server(object):
         transport, protocol = self.loop.run_until_complete(connect)
         self.loop.run_forever()
 
-    def stop(self):
-        for user in self.userdb.list(): 
-            fields = {
-                'isonline': 0,
-            }
-            self.statusdb.update(user.username, **fields)
+    def stop(self): 
         self.loop.call_soon_threadsafe(self.loop.stop)  
