@@ -10,4 +10,8 @@ class MessageType(Enum):
     DISCONNECTED = 6,
     LOGIN = 7,
     CONNECTED_USERS = 8,
-    CHATS_HISTORY = 9
+    CHATS_HISTORY = 9,
+    LOGIN_SUCCESS = 10,
+    LOGIN_FAILED = 11,
+    REGISTER_SUCESS = 12,
+    REGISTER_FAILED = 13

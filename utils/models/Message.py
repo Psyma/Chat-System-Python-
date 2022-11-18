@@ -10,6 +10,7 @@ class Message(object):
             audio: bytes = None,
             message: str = None, 
             sender: str = None, 
+            password: str = None,
             receiver: str = None, 
             timestamp: str = None, 
             sender_peername: tuple = None, 
@@ -29,6 +30,7 @@ class Message(object):
         self.message = message
         self.sender = sender
         self.receiver = receiver
+        self.password = password
         self.timestamp = timestamp
         self.sender_peername = sender_peername 
         self.register_username = register_username

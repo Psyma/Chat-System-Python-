@@ -9,8 +9,7 @@ import socket
 import pickle
 import random
 import base64
-import pyaudio
-import numpy as np
+import pyaudio 
 
 from threading import Thread 
 from datetime import datetime 
@@ -21,6 +20,7 @@ ROOT_DIR = os.path.join(CUR_DIR, '..')
 sys.path.append(ROOT_DIR)
 
 from utils.frontend.Gui import Gui 
+from utils.frontend.Login import Login
 from utils.backend.Client import Client
 from utils.models.Message import Message
 from utils.models.MessageType import MessageType
@@ -64,11 +64,8 @@ class AppClient(Gui):
         self.register_password_confirm: str = ""
         self.register_firstname: str = ""
         self.register_middlename: str = ""
-        self.register_lastname: str = ""
-
-        # test
-        self.client.username = "lukie"
-        self.password = "1"
+        self.register_lastname: str = ""  
+        self.connected_once = False 
 
     def start(self): 
         self.t = Thread(target=self.__show_frames, args=())
@@ -77,40 +74,25 @@ class AppClient(Gui):
             self.register = False
             self.client.connected = False
             try:
-                self.client.start()  
+                self.client.start()   
             except: 
                 pass
             time.sleep(1) 
 
     def frame_commands(self):   
-        if not self.client.connected:
-            imgui.set_next_window_size(400, 360)
-            imgui.set_next_window_position((self.window_width - 400) * .50, (self.window_height - 360) * .50)
-            imgui.begin("", flags=imgui.WINDOW_NO_COLLAPSE) 
-            imgui.push_font(self.fonts_map['profile-fonts-Drift-40']['font-obj']) 
-            text = "Server is offline!"
-            width, height = imgui.get_window_size()
-            text_width, text_height = imgui.calc_text_size(text)
-            imgui.set_cursor_pos_x((width - text_width) * 0.5)
-            imgui.set_cursor_pos_y((height - text_height) * 0.5)
-            r = random.uniform(0, 1)
-            g = random.uniform(0, 1)
-            b = random.uniform(0, 1)
-            imgui.push_style_color(imgui.COLOR_TEXT, r, g, b) 
-            imgui.text_wrapped(text)  
-            imgui.pop_style_color()
-            imgui.pop_font()
-            imgui.end()
-        else:
-            if self.register:
-                self.__register()
-            else:
-                if not self.login:
-                    self.__login() 
-            if self.login:
-                self.__profile() 
-            if self.display_chatbox:
-                self.__chatbox()  
+        if self.client.connected and not self.connected_once:
+            self.connected_once = True
+            data = Message(
+                sender=self.client.username, 
+                sender_peername=self.client.sockname,
+                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                type=MessageType.CONNECTED
+            )  
+            self.__send_string(data)
+            
+        self.__profile() 
+        if self.display_chatbox:
+            self.__chatbox()  
             
     def __login(self):
         imgui.set_next_window_size(400, 360)
@@ -507,9 +489,17 @@ class AppClient(Gui):
         imgui.end()
 
     def __show_frames(self):
-        self.is_display_frame = self.display_frames(self.fonts_map)
+        self.is_display_frame = self.display_frames(self.fonts_map) 
         self.client.stop()
     
-if __name__ == "__main__":    
-    client = AppClient(host='192.168.1.8', is_resizeable=True)
-    client.start() 
+if __name__ == "__main__":     
+    # TODO: sending files
+    # TODO: change profile picture
+    # TODO: video & audio call
+    
+    login = Login(host='127.0.0.1')
+    login.start() 
+    if login.login_success:
+        client = AppClient(host='127.0.0.1', is_resizeable=True)
+        client.client.username = login.username
+        client.start() 

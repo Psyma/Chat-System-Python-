@@ -33,13 +33,7 @@ class Client(object):
     def __tcp_connection_made(self, transport: asyncio.Transport):
         self.tcp_transport = transport
         self.peername = transport.get_extra_info('peername')
-        self.sockname = transport.get_extra_info('sockname') 
-        data = Message(
-            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-            sender_peername=self.sockname, 
-            type=MessageType.CONNECTED
-        ) 
-        self.tcp_transport.write(pickle.dumps(data))
+        self.sockname = transport.get_extra_info('sockname')  
 
     def __tcp_data_received(self, data: bytes): 
         data: Message = pickle.loads(data)

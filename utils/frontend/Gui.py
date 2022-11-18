@@ -10,6 +10,7 @@ class Gui(object):
         self.window_height = window_height
         self.is_resizeable = is_resizeable
         self.fonts_map = {} 
+        self.window_stop = True
 
     def glfw_init(self):
         window_name = self.window_name
@@ -62,9 +63,9 @@ class Gui(object):
     def display_frames(self, fonts_map : dict = {}):
         path_to_font = None
         imgui.create_context()
-        window = self.glfw_init()
+        self.window = self.glfw_init()
 
-        impl = GlfwRenderer(window)
+        self.impl = GlfwRenderer(self.window)
 
         io = imgui.get_io()
         jb = io.fonts.add_font_from_file_ttf(path_to_font, 30) if path_to_font is not None else None
@@ -75,12 +76,12 @@ class Gui(object):
             value['font-obj'] = font_obj
         
         self.fonts_map = fonts_map
-        impl.refresh_font_texture() 
+        self.impl.refresh_font_texture() 
         
-        while not glfw.window_should_close(window):   
-            self.render_frame(impl, window, jb, path_to_font)   
-            self.window_width, self.window_height = glfw.get_window_size(window)
+        while not glfw.window_should_close(self.window) and self.window_stop:   
+            self.render_frame(self.impl, self.window, jb, path_to_font)   
+            self.window_width, self.window_height = glfw.get_window_size(self.window)
              
-        impl.shutdown()
+        self.impl.shutdown()
         glfw.terminate()  
         return False

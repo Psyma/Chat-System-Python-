@@ -4,7 +4,7 @@ import logging
 
 from datetime import datetime  
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker 
 from utils.models.MessageType import MessageType
 from concurrent.futures import ThreadPoolExecutor
 
@@ -25,8 +25,7 @@ class Server(object):
         self.udp_port: int = udp_port
         self.tcp_transport = None
         self.transport_map: dict[tuple, asyncio.Transport] = {}
-        self.sender_peername_map: dict[str, tuple] = {}
-        self.peername_peername_map: dict[str, tuple] = {}
+        self.sender_peername_map: dict[str, tuple] = {} 
         self.udp_transport_map: dict[tuple, asyncio.DatagramTransport] = {}
         self.udp_peername_map: dict[str, tuple] = {}
         self.server_logs: list[str] = []
@@ -38,7 +37,7 @@ class Server(object):
         
         self.userdb = UserDatabase(session=session, engine=engine)
         self.chatsdb = ChatsDatabase(session=session, engine=engine)
-        self.statusdb = StatusDatabase(session=session, engine=engine) 
+        self.statusdb = StatusDatabase(session=session, engine=engine)  
 
     async def __connected(self): 
         for peername1, transport in list(self.transport_map.items()):
@@ -61,13 +60,7 @@ class Server(object):
                 }
                 self.statusdb.update(sender, **fields) 
                 self.server_logs.append("[{}] {} has logged out".format(timestamp, sender))
-                break
-        
-        for key_peername, val_peername in list(self.peername_peername_map.items()):
-            if peername == key_peername:
-                del self.peername_peername_map[peername]
-                self.server_logs.append("[{}] {} disconnected from the server".format(timestamp, peername))
-                break
+                break 
 
         del self.transport_map[peername]
         for peername, transport in list(self.transport_map.items()):
@@ -81,14 +74,35 @@ class Server(object):
         sockname = transport.get_extra_info('sockname') 
         self.transport_map[peername] = transport    
         
+        asyncio.ensure_future(self.__connected()) 
+        self.server_logs.append("[{}] {} connected to the server".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), peername))
+      
     def __tcp_data_received(self, data: bytes):
         data: Message = pickle.loads(data) 
         timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
     
         if data.type == MessageType.CONNECTED:
-            self.peername_peername_map[data.sender_peername] = data.sender_peername   
-            asyncio.ensure_future(self.__connected()) 
-            self.server_logs.append("[{}] {} connected to the server".format(timestamp, data.sender_peername))
+            fields = {
+                'isonline': 1
+            }
+            self.statusdb.update(data.sender, **fields)
+            self.sender_peername_map[data.sender] = data.sender_peername   
+            self.server_logs.append("[{}] {} has logged in".format(timestamp, data.sender))
+            status_results = self.statusdb.list()
+            chats_results = self.chatsdb.list()
+            status_response = Message(
+                connected_users=status_results,
+                type=MessageType.CONNECTED_USERS
+            )
+            chats_response = Message(
+                sender=data.sender,
+                history_messages=chats_results,
+                type=MessageType.CHATS_HISTORY
+            )
+            for sender, peername in self.sender_peername_map.items():
+                self.transport_map[peername].write(pickle.dumps(status_response)) 
+                if data.sender_peername == peername:
+                    self.transport_map[peername].write(pickle.dumps(chats_response)) 
         elif data.type == MessageType.MESSAGE: 
             fields = {
                 'isonline': 1,
@@ -123,64 +137,43 @@ class Server(object):
                         self.transport_map[peername].write(pickle.dumps(data))
             self.server_logs.append("[{}] {} sent message to {}".format(timestamp, data.sender, data.receiver))  
         elif data.type == MessageType.REGISTER:
-            user = UserModel(
-                username=data.register_username,
-                password=data.register_password,
-                firstname=data.register_firstname,
-                middlename=data.register_middlename,
-                lastname=data.register_lastname
-            )
-            status = StatusModel(
-                username=data.register_username,
-                isonline=0,
-                message=data.message,
-                new_message=0,
-                fullname="{} {} {}".format(data.register_firstname, data.register_middlename, data.register_lastname)
-            )
-            if type(self.userdb.get(data.register_username)) == type(None):
-                self.userdb.create(user)
-                self.statusdb.create(status)
-                response = Message( 
-                    message="you are registered",
-                    type=MessageType.LOGIN
-                ) 
-            else:
-                response = Message( 
-                    message="user already exists",
-                    type=MessageType.LOGIN
+            ok = False
+            user = self.userdb.get(data.register_username)
+            if type(user) == type(None):
+                ok = True
+                user_model = UserModel(
+                    username=data.register_username,
+                    password=data.register_password,
+                    firstname=data.register_firstname,
+                    middlename=data.register_middlename,
+                    lastname=data.register_lastname
                 )
-            self.transport_map[data.sender_peername].write(pickle.dumps(response)) 
-        elif data.type == MessageType.LOGIN: 
-            if type(self.userdb.get(data.sender)) != type(None):
-                fields = {
-                    'isonline': 1
-                }
-                self.statusdb.update(data.sender, **fields)
-                self.sender_peername_map[data.sender] = data.sender_peername   
-                self.server_logs.append("[{}] {} has logged in".format(timestamp, data.sender))
-
-                status_results = self.statusdb.list()
-                chats_results = self.chatsdb.list()
-                status_response = Message(
-                    connected_users=status_results,
-                    type=MessageType.CONNECTED_USERS
+                status_model = StatusModel(
+                    username=data.register_username,
+                    isonline=0,
+                    message=data.message,
+                    new_message=0,
+                    fullname="{} {} {}".format(data.register_firstname, data.register_middlename, data.register_lastname)
                 )
-                chats_response = Message(
-                    sender=data.sender,
-                    history_messages=chats_results,
-                    type=MessageType.CHATS_HISTORY
-                ) 
 
-                for peername_key, peername_value in self.peername_peername_map.items(): 
-                    self.transport_map[peername_key].write(pickle.dumps(status_response)) 
-                    if self.sender_peername_map[data.sender] == peername_key:
-                        self.transport_map[peername_key].write(pickle.dumps(chats_response)) 
-            else:
-                response = Message(
-                    message="Incorrect username or password",
-                    type=MessageType.LOGIN
-                )  
-                self.transport_map[data.sender_peername].write(pickle.dumps(response)) 
+                self.userdb.create(user_model)
+                self.statusdb.create(status_model)
+            
+            response = Message(  
+                type=MessageType.REGISTER_SUCESS if ok else MessageType.REGISTER_FAILED
+            )
+            self.transport_map[data.sender_peername].write(pickle.dumps(response))  
+        elif data.type == MessageType.LOGIN:   
+            ok = False
+            user = self.userdb.get(data.sender)
+            if type(user) != type(None):
+                if user.password == data.password:
+                    ok = True
+                    
+            response = Message( 
+                type=MessageType.LOGIN_SUCCESS if ok else MessageType.LOGIN_FAILED
+            ) 
+            self.transport_map[data.sender_peername].write(pickle.dumps(response))  
 
     def __tcp_connection_lost(self, transport: asyncio.BaseTransport):
          asyncio.ensure_future(self.__disconnected(transport))
@@ -208,7 +201,7 @@ class Server(object):
         self.loop.run_forever()
 
     def stop(self):
-        for user in self.userdb.list():
+        for user in self.userdb.list(): 
             fields = {
                 'isonline': 0,
             }
