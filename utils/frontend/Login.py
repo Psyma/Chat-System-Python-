@@ -133,6 +133,7 @@ class Login(Gui):
         return fonts_map
 
     def start(self): 
+        self.connecting_to_server = True
         self.t = Thread(target=self.__show_frames, args=())
         self.t.start()
         while self.is_display_frame: 
@@ -141,7 +142,8 @@ class Login(Gui):
                 self.loop = asyncio.get_event_loop()
                 self.loop.set_default_executor(ThreadPoolExecutor(1000))
                 coro = self.loop.create_connection(lambda: TCPClientProtocol(self.__tcp_connection_made, self.__tcp_data_received), self.host, self.tcp_port)
-                server, _ = self.loop.run_until_complete(coro)   
+                server, _ = self.loop.run_until_complete(coro)  
+                self.connecting_to_server = False 
                 self.loop.run_forever()
             except: 
                 pass

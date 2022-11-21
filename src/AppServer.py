@@ -1,6 +1,8 @@
 import os
 import sys 
 import imgui 
+import logging
+logging.disable(logging.WARNING)
 
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(CUR_DIR, '..')

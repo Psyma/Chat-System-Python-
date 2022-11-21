@@ -1,6 +1,6 @@
 from utils.models.MessageType import MessageType
-from utils.database.StatusDatabase import StatusTable
-from utils.database.ChatsDatabase import ChatsTable
+from utils.database.StatusRepository import StatusModel
+from utils.database.ChatsRepository import ChatsModel
 
 class Message(object):
     def __init__(self, 
@@ -19,8 +19,8 @@ class Message(object):
             register_firstname: str = None,
             register_middlename: str = None,
             register_lastname: str = None,
-            connected_users: list[StatusTable] = [],
-            history_messages: list[ChatsTable] = [],
+            connected_users: list[StatusModel] = [],
+            history_messages: list[ChatsModel] = [],
             type: MessageType = MessageType.DEFAULT) -> None:
             
         self.image = image

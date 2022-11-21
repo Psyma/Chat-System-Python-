@@ -412,9 +412,10 @@ if __name__ == "__main__":
     # TODO: change profile picture
     # TODO: video & audio call
     
-    login = Login(host='127.0.0.1')
+    host = '127.0.0.1'
+    login = Login(host=host)
     login.start() 
     if login.login_success:
-        client = AppClient(host='127.0.0.1', is_resizeable=True)
+        client = AppClient(host=host, is_resizeable=True)
         client.client.username = login.username
         client.start() 

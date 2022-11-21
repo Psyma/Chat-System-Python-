@@ -1,22 +1,16 @@
 import pickle
-import asyncio 
-import logging
+import asyncio  
 
-from datetime import datetime  
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker 
+from datetime import datetime   
 from utils.models.MessageType import MessageType
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor 
 
 from utils.models.Message import Message
-from utils.models.UserModel import UserModel
-from utils.models.ChatsModel import ChatsModel
-from utils.models.StatusModel import StatusModel
-from utils.database.UserDatabase import UserDatabase
-from utils.database.ChatsDatabase import ChatsDatabase
-from utils.database.StatusDatabase import StatusDatabase
+from utils.database.UserRepository import UserRepository
+from utils.database.ChatsRepository import ChatsRepository
+from utils.database.StatusRepository import StatusRepository
 from utils.protocols.TCPServerProtocol import TCPServerProtocol
-from utils.protocols.UDPServerProtocol import UDPServerProtocol
+from utils.protocols.UDPServerProtocol import UDPServerProtocol 
 
 class Server(object):
     def __init__(self, host: str = '127.0.0.1', tcp_port: int = 9999, udp_port: int = 6666) -> None: 
@@ -28,17 +22,13 @@ class Server(object):
         self.sender_peername_map: dict[str, tuple] = {} 
         self.udp_transport_map: dict[tuple, asyncio.DatagramTransport] = {}
         self.udp_peername_map: dict[str, tuple] = {}
-        self.server_logs: list[str] = []
+        self.server_logs: list[str] = []  
 
-        logging.disable(logging.WARNING)
-        engine = create_engine('sqlite:///database.sqlite', echo=True)
-        Session = sessionmaker(bind=engine)
-        session = Session()
-        
-        self.userdb = UserDatabase(session=session, engine=engine)
-        self.chatsdb = ChatsDatabase(session=session, engine=engine)
-        self.statusdb = StatusDatabase(session=session, engine=engine)  
-        for user in self.userdb.list(): 
+        self.userdb = UserRepository()
+        self.chatsdb = ChatsRepository()
+        self.statusdb = StatusRepository()
+
+        for user in self.userdb.list():  
             fields = {
                 'isonline': 0,
             }
@@ -113,20 +103,20 @@ class Server(object):
                 'isonline': 1,
                 'new_message': 1,
                 'message': data.message
+            } 
+            chats = {
+                'sender': data.sender,
+                'receiver': data.receiver,
+                'message': data.message,
+                'timestamp': data.timestamp,
+                'peername': str(data.sender_peername)
             }
-            chats = ChatsModel(
-                sender=data.sender,
-                receiver=data.receiver,
-                message=data.message,
-                timestamp=data.timestamp,
-                peername=str(data.sender_peername)
-            )
-            self.chatsdb.create(chats)
+            self.chatsdb.insert(**chats)
             self.statusdb.update(data.sender, **fields)
 
-            for status in self.statusdb.list():
-                if status.username == data.receiver:
-                    if status.isonline:
+            for user in self.statusdb.list():
+                if user.username == data.receiver:
+                    if user.isonline:
                         peername = self.sender_peername_map[data.receiver] 
                         data = Message(
                             image=data.image, 
@@ -146,23 +136,23 @@ class Server(object):
             user = self.userdb.get(data.register_username)
             if type(user) == type(None):
                 ok = True
-                user_model = UserModel(
-                    username=data.register_username,
-                    password=data.register_password,
-                    firstname=data.register_firstname,
-                    middlename=data.register_middlename,
-                    lastname=data.register_lastname
-                )
-                status_model = StatusModel(
-                    username=data.register_username,
-                    isonline=0,
-                    message=data.message,
-                    new_message=0,
-                    fullname="{} {} {}".format(data.register_firstname, data.register_middlename, data.register_lastname)
-                )
+                user_model = {
+                    'username': data.register_username,
+                    'password': data.register_password,
+                    'firstname': data.register_firstname,
+                    'middlename': data.register_middlename,
+                    'lastname': data.register_lastname
+                }
+                status_model = {
+                    'username': data.register_username,
+                    'isonline': 0,
+                    'message': data.message,
+                    'new_message': 0,
+                    'fullname': "{} {} {}".format(data.register_firstname, data.register_middlename, data.register_lastname)
+                }
 
-                self.userdb.create(user_model)
-                self.statusdb.create(status_model)
+                self.userdb.insert(**user_model)
+                self.statusdb.insert(**status_model)
             
             response = Message(  
                 type=MessageType.REGISTER_SUCESS if ok else MessageType.REGISTER_FAILED
@@ -171,7 +161,7 @@ class Server(object):
         elif data.type == MessageType.LOGIN:   
             ok = False
             user = self.userdb.get(data.sender)
-            if type(user) != type(None):
+            if type(user) != type(None): 
                 if user.password == data.password:
                     ok = True
                     
