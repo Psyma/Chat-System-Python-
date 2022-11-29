@@ -10,6 +10,11 @@ import pickle
 import random
 import base64
 import pyaudio 
+import easygui
+import asyncio
+import socket
+import pathlib
+import filetype
 
 from threading import Thread 
 from datetime import datetime 
@@ -69,15 +74,16 @@ class AppClient(Gui):
         self.delay = 4
         self.counter = 1
         self.delay_counter = 1
+        self.upload_limit = 50 
 
     def start(self): 
         self.t = Thread(target=self.__show_frames, args=())
         self.t.start()
         while self.is_display_frame:
-            self.register = False
-            self.client.connected = False
-            self.connected = False
             try:
+                self.register = False
+                self.client.connected = False
+                self.connected = False
                 self.client.start()   
             except: 
                 pass
@@ -87,10 +93,10 @@ class AppClient(Gui):
         if self.client.connected and not self.connected:
             self.connected = True
             data = Message(
-                sender=self.client.username, 
-                sender_peername=self.client.sockname,
-                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                type=MessageType.CONNECTED
+                sender = self.client.username, 
+                sender_peername = self.client.sockname,
+                timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                type = MessageType.CONNECTED
             )  
             self.__send_string(data)
         
@@ -135,18 +141,15 @@ class AppClient(Gui):
             imgui.pop_id()
 
     def __send_string(self, data: Message):
-        self.string_stream.send(data, self.client.tcp_transport)
-        if data.type == MessageType.MESSAGE:
-            message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), "You", data.message)  
-            self.client.users_chat_map[data.receiver]['messages'].append(message)
-
+        self.string_stream.send(data, self.client.tcp_transport) 
+        
     def __send_image(self, frame, size = 65536): 
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         frames = base64.b64encode(buffer)
 
         chunks = [frames[i:i+size] for i in range(0,len(frames), size)] 
         for i, chunk in enumerate(chunks):
-            data = Message(
+            message = Message(
                 image=chunk, 
                 image_index=i, 
                 image_len=len(chunks) - 1,  
@@ -158,7 +161,7 @@ class AppClient(Gui):
                                 
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, size)
-            self.socket.sendto(pickle.dumps(data), self.client.udp_peername)
+            self.socket.sendto(pickle.dumps(message), self.client.udp_peername)
     
     def __send_audio(self, frame, size: int = 65536):
         data = Message(
@@ -233,7 +236,7 @@ class AppClient(Gui):
     def __chatbox(self):
         imgui.set_next_window_size(self.window_width - 299, self.window_height)
         imgui.set_next_window_position(299, 0)
-        imgui.begin("Chats", flags=imgui.WINDOW_NO_COLLAPSE)
+        imgui.begin("Chatbox", flags=imgui.WINDOW_NO_COLLAPSE)
         
         if True:
             imgui.begin_child("1", border=False, height=65, flags=imgui.WINDOW_NO_SCROLLBAR)
@@ -280,49 +283,69 @@ class AppClient(Gui):
 
         if True: 
             imgui.begin_child("2", border=False)
-            changed, text_val = imgui.input_text("Message", "", 100, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
+            changed, text_val = imgui.input_text("Message", "", 1_000_000, flags=imgui.INPUT_TEXT_ENTER_RETURNS_TRUE)
             if changed:
                 if text_val: 
                     data = Message(
-                        message=text_val, 
-                        sender=self.client.username, 
-                        receiver=self.to_user, 
-                        timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                        sender_peername=self.client.sockname, 
-                        type=MessageType.MESSAGE
+                        message = text_val, 
+                        sender = self.client.username, 
+                        receiver = self.to_user, 
+                        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                        sender_peername = self.client.sockname, 
+                        type = MessageType.MESSAGE
                     )
-                    self.__send_string(data)
-                    self.client.users_map[self.to_user]['last-message'] = text_val
-                    self.client.users_map[self.to_user]['new-message'] = 1
-                    temp = {}
-                    temp[data.receiver] = self.client.users_map[data.receiver]
-                    for key, value in self.client.users_map.items():
-                        if key != data.receiver:
-                            temp[key] = value
-                    self.client.users_map = temp 
+                    self.__send_string(data) 
                 imgui.set_keyboard_focus_here()
             imgui.same_line()
-            imgui.button("Add files")
+            if imgui.button("Add files"):
+                filepath = easygui.fileopenbox() 
+                if filepath != None:
+                    filesize = os.path.getsize(filepath)
+                    if round(filesize / 1_000_000) <= self.upload_limit: 
+                        with open(filepath, 'rb') as file: 
+                            filename = pathlib.Path(filepath).name
+                            data = Message(
+                                sender=self.client.username,
+                                file = file.read(),  
+                                filename = filename,
+                                filesize = filesize, 
+                                receiver = self.to_user, 
+                                file_reference="{}-{}-{}".format(time.time(), self.client.username, self.to_user),
+                                timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                                sender_peername = self.client.sockname, 
+                                type = MessageType.FILE
+                            )  
+                            self.__send_string(data)
+                    else: 
+                        pass # TODO: info message
             imgui.same_line()
-            imgui.button("Stickers")
+            if imgui.button("Stickers"):
+                pass
             imgui.same_line()
-            imgui.button("GIF")
+            if imgui.button("GIF"):
+                pass
             
             if True: 
                 imgui.begin_child("3", border=True)  
                 for user, value in self.client.users_chat_map.items():
                     if user == self.to_user:  
                         for i in range(len(value['messages']) - 1, -1, -1):
-                            data = value['messages'][i] 
-                            if str(search_text_val).casefold() in str(data).casefold():
-                                if "] [You]:" in data: 
+                            name = value['messages'][i]['name'] 
+                            message = value['messages'][i]['message'] 
+                            timestamp = value['messages'][i]['timestamp'] 
+                            filename = value['messages'][i]['filename']
+                            if str(search_text_val).casefold() in str(message).casefold():
+                                message = "[{}] [{}]: {}".format(timestamp, name.split(" ")[0], message if not filename else filename)
+                                if "] [You]:" in message: 
                                     imgui.push_style_color(imgui.COLOR_TEXT, 1, 1, 1) 
-                                    imgui.text_wrapped(data)  
-                                    imgui.pop_style_color()
                                 else:
                                     imgui.push_style_color(imgui.COLOR_TEXT, 0, 106 / 255, 1) 
-                                    imgui.text_wrapped(data)  
-                                    imgui.pop_style_color()   
+                                imgui.text_wrapped(message)  
+                                imgui.pop_style_color()   
+                                if filename and imgui.is_item_hovered():
+                                    imgui.set_tooltip("attachment")
+                                    if imgui.core.is_item_clicked(0): 
+                                        print("Clicked!") # TODO view image & video
 
                 imgui.end_child()
             imgui.end_child()
@@ -404,14 +427,14 @@ class AppClient(Gui):
         imgui.end()
 
     def __show_frames(self):
-        self.is_display_frame = self.display_frames(self.fonts_map) 
-        self.client.stop()
+        self.is_display_frame = self.display_frames(self.fonts_map)  
+        self.client.stop() 
     
-if __name__ == "__main__":     
-    # TODO: sending files
+if __name__ == "__main__":      
+    # TODO: sending files percentage
+    # TODO: view image & video
     # TODO: change profile picture
-    # TODO: video & audio call
-    
+    # TODO: video & audio call 
     host = '127.0.0.1'
     login = Login(host=host)
     login.start() 

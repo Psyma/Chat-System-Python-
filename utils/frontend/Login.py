@@ -22,7 +22,8 @@ from utils.models.Message import Message
 from utils.models.MessageType import MessageType
 from concurrent.futures import ThreadPoolExecutor
 from utils.protocols.TCPClientProtocol import TCPClientProtocol 
- 
+from utils.messaging.StringStream import StringStream
+
 class Login(Gui):
     def __init__(self, 
                 window_name="", 
@@ -36,6 +37,7 @@ class Login(Gui):
         self.tcp_port = tcp_port
         self.is_display_frame = True
         self.fonts_map = self.__set_fonts() 
+        self.string_stream = StringStream()
 
         self.username = "tata"
         self.password = "1"
@@ -71,11 +73,11 @@ class Login(Gui):
             self.login_success = True
         elif data.type == MessageType.LOGIN_FAILED:
             self.logging_info = True 
-            self.message = "Incorrect username or password" 
+            self.message = data.message
         elif data.type == MessageType.REGISTER_SUCESS: 
             self.register = False
             self.logging_info = True
-            self.message = "Successfully created"
+            self.message = "Account successfully created"
             self.register_username: str = ""
             self.register_password: str = ""
             self.register_password_confirm: str = ""
@@ -84,7 +86,7 @@ class Login(Gui):
             self.register_lastname: str = "" 
         elif data.type == MessageType.REGISTER_FAILED: 
             self.logging_info = True
-            self.message = "username already exists"  
+            self.message = "Username already exists"  
 
     def __set_fonts(self):
         fonts_map: dict[str, dict[str, None | int | str]] = {
@@ -269,8 +271,8 @@ class Login(Gui):
                 timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
                 type=MessageType.LOGIN
             )
-        
-            self.tcp_transport.write(pickle.dumps(data))
+
+            self.string_stream.send(data, self.tcp_transport) 
         
         if imgui.button("Register"): 
             self.register = True
@@ -284,8 +286,8 @@ class Login(Gui):
                 timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
                 type=MessageType.LOGIN
             )
-        
-            self.tcp_transport.write(pickle.dumps(data))
+
+            self.string_stream.send(data, self.tcp_transport) 
         imgui.same_line()
         if imgui.button("Close"):
             self.is_display_frame = False 

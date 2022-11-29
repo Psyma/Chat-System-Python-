@@ -9,6 +9,11 @@ class Message(object):
             image_len: int = 0,  
             audio: bytes = None,
             message: str = None, 
+            file: bytes = None,  
+            filename: bytes = None,
+            file_reference: str = None,
+            filepercent: int = None,
+            filesize: int = None, 
             sender: str = None, 
             password: str = None,
             receiver: str = None, 
@@ -28,6 +33,11 @@ class Message(object):
         self.image_len = image_len 
         self.audio = audio
         self.message = message
+        self.file = file 
+        self.filename = filename
+        self.file_reference = file_reference
+        self.filepercent = filepercent
+        self.filesize = filesize 
         self.sender = sender
         self.receiver = receiver
         self.password = password

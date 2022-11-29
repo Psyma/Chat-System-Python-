@@ -6,12 +6,14 @@ import asyncio
 import numpy as np
 
 from queue import Queue
+from functools import wraps
 from datetime import datetime
 from imgui_datascience import * 
 
 from utils.models.Message import Message
 from utils.models.MessageType import MessageType
 from concurrent.futures import ThreadPoolExecutor
+from asyncio.proactor_events import _ProactorBasePipeTransport
 from utils.protocols.TCPClientProtocol import TCPClientProtocol
 from utils.protocols.UDPClientProtocol import UDPClientProtocol
  
@@ -50,17 +52,29 @@ class Client(object):
                 if user == data.sender:
                     value['online'] = False 
         elif data.type == MessageType.MESSAGE:  
-            if data.message: 
-                name = self.fullname_map[data.sender]
-                message = "[{}] [{}]: {}".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), name.split(" ")[0], data.message)
-                self.users_chat_map[data.sender]['messages'].append(message)  
-                self.users_map[data.sender]['last-message'] = data.message 
+            if data.message or data.filename:   
+                ok = False
+                if data.sender == self.username:
+                    ok = True
+                    name = "You"
+                    key = data.receiver
+                elif data.receiver == self.username:
+                    ok = True
+                    key = data.sender
+                    name = self.fullname_map[data.sender]
+                self.users_chat_map[key]['messages'].append({ 
+                    'name': name.split(" ")[0],
+                    'message': data.message,
+                    'filename': data.filename,
+                    'timestamp': data.timestamp, 
+                })  
+                self.users_map[key]['last-message'] = data.message if data.message else data.filename
                 temp = {}
-                temp[data.sender] = self.users_map[data.sender]
-                for key, value in self.users_map.items():
-                    if key != data.sender:
-                        temp[key] = value
-                self.users_map = temp 
+                temp[key] = self.users_map[key]
+                for _key, value in self.users_map.items():
+                    if _key != key:
+                        temp[_key] = value
+                self.users_map = temp  
         elif data.type == MessageType.REGISTER:
             print(data.message)
         elif data.type == MessageType.LOGIN:
@@ -84,18 +98,24 @@ class Client(object):
                         'messages': list(),
                 }
         elif data.type == MessageType.CHATS_HISTORY:   
-            for user in data.history_messages: 
-                if user.sender == self.username:
-                    key = user.receiver
-                    message = "[{}] [{}]: {}".format(user.timestamp, 'You', user.message)
-                    self.users_chat_map[key]['messages'].append(message) 
-                    self.users_map[user.receiver]['last-message'] = user.message  
-                elif user.receiver == self.username:
-                    key = user.sender
-                    name = self.fullname_map[user.sender]
-                    message = "[{}] [{}]: {}".format(user.timestamp, name.split(" ")[0], user.message)  
-                    self.users_chat_map[key]['messages'].append(message)  
-                    self.users_map[user.sender]['last-message'] = user.message  
+            for chat in data.history_messages:  
+                ok = False
+                if chat.sender == self.username:
+                    ok = True
+                    name = "You"
+                    key = chat.receiver
+                elif chat.receiver == self.username:
+                    ok = True
+                    key = chat.sender
+                    name = self.fullname_map[chat.sender]
+                if ok: 
+                    self.users_chat_map[key]['messages'].append({
+                        'name': name.split(" ")[0],
+                        'message': chat.message,
+                        'filename': chat.filename,
+                        'timestamp': chat.timestamp, 
+                    }) 
+                    self.users_map[key]['last-message'] = chat.message if chat.message else chat.filename
 
     def __udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 
@@ -121,8 +141,19 @@ class Client(object):
                 self.image = b'' 
         if data.audio:
             pass
+    
+    def __silence_event_loop_closed(self, func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except RuntimeError as e:
+                if str(e) != 'Event loop is closed':
+                    raise
+        return wrapper
 
     def start(self):
+        _ProactorBasePipeTransport.__del__ = self.__silence_event_loop_closed(_ProactorBasePipeTransport.__del__)
         asyncio.set_event_loop(asyncio.new_event_loop())
         self.loop = asyncio.get_event_loop()
         self.loop.set_default_executor(ThreadPoolExecutor(1000))
@@ -134,5 +165,5 @@ class Client(object):
         self.connected = True
         self.loop.run_forever()
 
-    def stop(self):
+    def stop(self):  
         self.loop.call_soon_threadsafe(self.loop.stop)  

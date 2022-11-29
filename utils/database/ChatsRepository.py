@@ -1,7 +1,7 @@
 from utils.database.Repository import Repository
 
 from sqlalchemy import create_engine
-from sqlalchemy import Column, String, Integer
+from sqlalchemy import Column, String, Integer, BLOB
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
@@ -11,6 +11,8 @@ class ChatsModel(Base):
     sender = Column(String)
     receiver = Column(String)
     message = Column(String)
+    filename = Column(String)
+    file_reference = Column(String)
     timestamp = Column(String)
     peername = Column(String)
     
@@ -18,6 +20,8 @@ class ChatsModel(Base):
         self.sender = kwargs['sender']
         self.receiver = kwargs['receiver']
         self.message = kwargs['message']
+        self.filename = kwargs['filename']
+        self.file_reference = kwargs['file_reference']
         self.timestamp = kwargs['timestamp']
         self.peername = kwargs['peername']
 

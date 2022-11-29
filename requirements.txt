@@ -1,4 +1,5 @@
 pyaudio 
+filetype
 imgui[full]
 opencv-python
 imgui-datascience

@@ -28,8 +28,8 @@ class AppServer(Gui):
 
     def frame_commands(self):
         imgui.begin("Video")
-        for logs in self.server.server_logs:
-            imgui.text_wrapped(logs)
+        for i in range(len(self.server.server_logs) - 1, -1, -1): 
+            imgui.text_wrapped(self.server.server_logs[i])
         imgui.end()
 
     def show_frames(self, fonts_map: dict = {}):  
