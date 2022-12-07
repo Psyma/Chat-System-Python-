@@ -1,2 +1,4 @@
-./database.sqlite
-./utils/uploads/*
+.vscode
+database.sqlite
+utils/images/*
+utils/uploads/*
