@@ -1,4 +1,4 @@
 .vscode
 database.sqlite
-utils/images/**
-utils/uploads/**
+utils/images/*
+utils/uploads/*
