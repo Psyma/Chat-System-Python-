@@ -57,7 +57,7 @@ class AppClient(Gui):
         self.is_audio_call: bool = False
         self.fonts_map: dict[str, dict[str, None | int | str]] = self.__set_fonts()
         self.client = Client(host=host, tcp_port=tcp_port, udp_port=udp_port)
-        self.string_stream = StringStream()
+        #self.string_stream = StringStream()
         self.video_stream = VideoStream(0) 
         self.audio_stream = AudioStream(MS, RATE, AUDIO, FORMAT, CHANNELS)    
 
@@ -99,8 +99,7 @@ class AppClient(Gui):
                 type = MessageType.CONNECTED
             )  
             self.__send_string(data)
-        
-        
+          
         self.__profile() 
         if self.display_chatbox:
             self.__chatbox()
@@ -141,7 +140,7 @@ class AppClient(Gui):
             imgui.pop_id()
 
     def __send_string(self, data: Message):
-        self.string_stream.send(data, self.client.tcp_transport) 
+        self.client.string_stream.send(data, self.client.tcp_transport) 
         
     def __send_image(self, frame, size = 65536): 
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -293,8 +292,10 @@ class AppClient(Gui):
                         timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
                         sender_peername = self.client.sockname, 
                         type = MessageType.MESSAGE
-                    )
-                    self.__send_string(data) 
+                    ) 
+                    
+                    self.__send_string(data)  
+
                 imgui.set_keyboard_focus_here()
             imgui.same_line()
             if imgui.button("Add files"):
@@ -315,7 +316,7 @@ class AppClient(Gui):
                                 sender_peername = self.client.sockname, 
                                 type = MessageType.FILE
                             )  
-                            self.__send_string(data)
+                            self.__send_string(data) 
                     else: 
                         pass # TODO: info message
             imgui.same_line()
@@ -429,6 +430,7 @@ class AppClient(Gui):
     def __show_frames(self):
         self.is_display_frame = self.display_frames(self.fonts_map)  
         self.client.stop() 
+        self.client.string_stream.stopped = True
     
 if __name__ == "__main__":      
     # TODO: sending files percentage

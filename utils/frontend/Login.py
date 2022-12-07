@@ -87,6 +87,11 @@ class Login(Gui):
         elif data.type == MessageType.REGISTER_FAILED: 
             self.logging_info = True
             self.message = "Username already exists"  
+        elif data.type == MessageType.MESSAGE_RECEIVED:
+            self.string_stream.mssgreceived = True
+
+    def __tcp_connection_lost(self):
+        self.connecting_to_server = True
 
     def __set_fonts(self):
         fonts_map: dict[str, dict[str, None | int | str]] = {
@@ -143,7 +148,7 @@ class Login(Gui):
                 asyncio.set_event_loop(asyncio.new_event_loop())
                 self.loop = asyncio.get_event_loop()
                 self.loop.set_default_executor(ThreadPoolExecutor(1000))
-                coro = self.loop.create_connection(lambda: TCPClientProtocol(self.__tcp_connection_made, self.__tcp_data_received), self.host, self.tcp_port)
+                coro = self.loop.create_connection(lambda: TCPClientProtocol(self.__tcp_connection_made, self.__tcp_data_received, self.__tcp_connection_lost), self.host, self.tcp_port)
                 server, _ = self.loop.run_until_complete(coro)  
                 self.connecting_to_server = False 
                 self.loop.run_forever()
@@ -152,6 +157,7 @@ class Login(Gui):
             time.sleep(1) 
 
     def stop(self):
+        self.string_stream.stopped = True
         self.loop.call_soon_threadsafe(self.loop.stop)  
 
     def __register(self):
@@ -286,12 +292,13 @@ class Login(Gui):
                 timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
                 type=MessageType.LOGIN
             )
-
+    
             self.string_stream.send(data, self.tcp_transport) 
         imgui.same_line()
         if imgui.button("Close"):
             self.is_display_frame = False 
             self.window_stop = False
+            self.string_stream.stopped = True
 
         imgui.end_child() 
         imgui.end()

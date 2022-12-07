@@ -16,3 +16,4 @@ class MessageType(Enum):
     CONNECTED_USERS = 12,
     REGISTER_SUCESS = 13,
     REGISTER_FAILED = 14,
+    MESSAGE_RECEIVED = 15,

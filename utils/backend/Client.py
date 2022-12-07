@@ -13,10 +13,10 @@ from imgui_datascience import *
 from utils.models.Message import Message
 from utils.models.MessageType import MessageType
 from concurrent.futures import ThreadPoolExecutor
+from utils.messaging.StringStream import StringStream
 from asyncio.proactor_events import _ProactorBasePipeTransport
 from utils.protocols.TCPClientProtocol import TCPClientProtocol
 from utils.protocols.UDPClientProtocol import UDPClientProtocol
- 
 class Client(object):
     def __init__(self, host: str = '127.0.0.1', tcp_port: int = 9999, udp_port: int = 6666) -> None:
         self.host: str = host
@@ -28,9 +28,10 @@ class Client(object):
         self.fullname_map: dict[str, str] = {}
         self.sockname: tuple = None
         self.connected: bool = False
+        self.string_stream = StringStream()
         self.tcp_transport: asyncio.Transport = None
         self.users_map: dict[str, dict[str, bool | str]] = {}
-        self.users_chat_map: dict[str, dict[str, Queue | list]] = {} 
+        self.users_chat_map: dict[str, dict[str, Queue | list]] = {}  
 
     def __tcp_connection_made(self, transport: asyncio.Transport):
         self.tcp_transport = transport
@@ -41,12 +42,7 @@ class Client(object):
         data: Message = pickle.loads(data)
 
         if data.type == MessageType.CONNECTED: 
-            if data.sender not in self.users_chat_map:   
-                self.users_chat_map[data.sender] = {
-                    'images': Queue(),
-                    'audios': Queue(),
-                    'messages': list(),
-                }
+            pass
         elif data.type == MessageType.DISCONNECTED:
             for user, value in self.users_map.items():
                 if user == data.sender:
@@ -90,14 +86,9 @@ class Client(object):
                         'online': user.isonline,
                         'new-message': user.new_message,
                         'last-message': None
-                    } 
-                if user.username not in self.users_chat_map:
-                    self.users_chat_map[user.username] = {
-                        'images': Queue(),
-                        'audios': Queue(),
-                        'messages': list(),
-                }
-        elif data.type == MessageType.CHATS_HISTORY:   
+                    }  
+        elif data.type == MessageType.CHATS_HISTORY:    
+            keys = {}
             for chat in data.history_messages:  
                 ok = False
                 if chat.sender == self.username:
@@ -108,6 +99,13 @@ class Client(object):
                     ok = True
                     key = chat.sender
                     name = self.fullname_map[chat.sender]
+                if key not in keys:
+                    keys[key] = 1
+                    self.users_chat_map[key] = {
+                        'images': Queue(),
+                        'audios': Queue(),
+                        'messages': list(),
+                    }
                 if ok: 
                     self.users_chat_map[key]['messages'].append({
                         'name': name.split(" ")[0],
@@ -116,6 +114,11 @@ class Client(object):
                         'timestamp': chat.timestamp, 
                     }) 
                     self.users_map[key]['last-message'] = chat.message if chat.message else chat.filename
+        elif data.type == MessageType.MESSAGE_RECEIVED:
+            self.string_stream.mssgreceived = True
+
+    def __tcp_connection_lost(self):
+        pass
 
     def __udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 
@@ -157,7 +160,7 @@ class Client(object):
         asyncio.set_event_loop(asyncio.new_event_loop())
         self.loop = asyncio.get_event_loop()
         self.loop.set_default_executor(ThreadPoolExecutor(1000))
-        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.__tcp_connection_made, self.__tcp_data_received), self.host, self.tcp_port)
+        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.__tcp_connection_made, self.__tcp_data_received, self.__tcp_connection_lost), self.host, self.tcp_port)
         server, _ = self.loop.run_until_complete(coro) 
         
         connect = self.loop.create_datagram_endpoint(lambda: UDPClientProtocol(self.__udp_connection_made, self.__udp_datagram_received), remote_addr=(self.host, self.udp_port))
