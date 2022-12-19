@@ -156,7 +156,7 @@ class Login(Gui):
                 pass
             time.sleep(1) 
 
-    def stop(self):
+    def stop(self): 
         self.string_stream.stopped = True
         self.loop.call_soon_threadsafe(self.loop.stop)  
 
@@ -291,9 +291,10 @@ class Login(Gui):
                 sender_peername=self.sockname,
                 timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
                 type=MessageType.LOGIN
-            )
-    
+            ) 
+
             self.string_stream.send(data, self.tcp_transport) 
+            
         imgui.same_line()
         if imgui.button("Close"):
             self.is_display_frame = False 

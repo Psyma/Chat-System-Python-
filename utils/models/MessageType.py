@@ -17,3 +17,4 @@ class MessageType(Enum):
     REGISTER_SUCESS = 13,
     REGISTER_FAILED = 14,
     MESSAGE_RECEIVED = 15,
+    MESSAGE_LEN = 16

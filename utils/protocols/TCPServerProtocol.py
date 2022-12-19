@@ -15,8 +15,8 @@ class TCPServerProtocol(asyncio.Protocol):
         self.transport = transport
         self.connection_made_callback(self.transport)  
 
-    def data_received(self, data: bytes) -> None:
-        self.data_received_callback(data) 
+    def data_received(self, data: bytes) -> None: 
+        self.data_received_callback(data, self.transport) 
     
     def connection_lost(self, exc: Exception) -> None:
         self.connection_lost_callback(self.transport) 

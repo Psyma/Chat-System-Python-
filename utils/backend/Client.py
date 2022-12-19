@@ -16,8 +16,9 @@ from concurrent.futures import ThreadPoolExecutor
 from utils.messaging.StringStream import StringStream
 from asyncio.proactor_events import _ProactorBasePipeTransport
 from utils.protocols.TCPClientProtocol import TCPClientProtocol
-from utils.protocols.UDPClientProtocol import UDPClientProtocol
-class Client(object):
+from utils.protocols.UDPClientProtocol import UDPClientProtocol 
+
+class Client():
     def __init__(self, host: str = '127.0.0.1', tcp_port: int = 9999, udp_port: int = 6666) -> None:
         self.host: str = host
         self.tcp_port: int = tcp_port
@@ -27,18 +28,17 @@ class Client(object):
         self.username: str = "" 
         self.fullname_map: dict[str, str] = {}
         self.sockname: tuple = None
-        self.connected: bool = False
-        self.string_stream = StringStream()
+        self.connected: bool = False 
         self.tcp_transport: asyncio.Transport = None
         self.users_map: dict[str, dict[str, bool | str]] = {}
         self.users_chat_map: dict[str, dict[str, Queue | list]] = {}  
 
-    def __tcp_connection_made(self, transport: asyncio.Transport):
+    def tcp_connection_made(self, transport: asyncio.Transport):
         self.tcp_transport = transport
         self.peername = transport.get_extra_info('peername')
         self.sockname = transport.get_extra_info('sockname')  
 
-    def __tcp_data_received(self, data: bytes): 
+    def tcp_data_received(self, data: bytes): 
         data: Message = pickle.loads(data)
 
         if data.type == MessageType.CONNECTED: 
@@ -87,6 +87,12 @@ class Client(object):
                         'new-message': user.new_message,
                         'last-message': None
                     }  
+                if user.username not in self.users_chat_map:
+                    self.users_chat_map[user.username] = {
+                        'images': Queue(),
+                        'audios': Queue(),
+                        'messages': list(),
+                }
         elif data.type == MessageType.CHATS_HISTORY:    
             keys = {}
             for chat in data.history_messages:  
@@ -113,14 +119,12 @@ class Client(object):
                         'filename': chat.filename,
                         'timestamp': chat.timestamp, 
                     }) 
-                    self.users_map[key]['last-message'] = chat.message if chat.message else chat.filename
-        elif data.type == MessageType.MESSAGE_RECEIVED:
-            self.string_stream.mssgreceived = True
+                    self.users_map[key]['last-message'] = chat.message if chat.message else chat.filename 
 
-    def __tcp_connection_lost(self):
+    def tcp_connection_lost(self):
         pass
 
-    def __udp_connection_made(self, transport: asyncio.DatagramTransport):
+    def udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 
         self.udp_peername = transport.get_extra_info('peername')
         self.udp_sockname = transport.get_extra_info('sockname') 
@@ -132,7 +136,7 @@ class Client(object):
         )
         transport.sendto(pickle.dumps(data), self.udp_peername)
 
-    def __udp_datagram_received(self, data: bytes, addr: tuple):
+    def udp_datagram_received(self, data: bytes, addr: tuple):
         data: Message = pickle.loads(data) 
         if data.image:
             self.image = self.image + data.image
@@ -145,7 +149,7 @@ class Client(object):
         if data.audio:
             pass
     
-    def __silence_event_loop_closed(self, func):
+    def silence_event_loop_closed(self, func):
         @wraps(func)
         def wrapper(self, *args, **kwargs):
             try:
@@ -155,15 +159,15 @@ class Client(object):
                     raise
         return wrapper
 
-    def start(self):
-        _ProactorBasePipeTransport.__del__ = self.__silence_event_loop_closed(_ProactorBasePipeTransport.__del__)
+    def start(self): 
+        _ProactorBasePipeTransport.__del__ = self.silence_event_loop_closed(_ProactorBasePipeTransport.__del__)
         asyncio.set_event_loop(asyncio.new_event_loop())
         self.loop = asyncio.get_event_loop()
         self.loop.set_default_executor(ThreadPoolExecutor(1000))
-        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.__tcp_connection_made, self.__tcp_data_received, self.__tcp_connection_lost), self.host, self.tcp_port)
+        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.tcp_connection_made, self.tcp_data_received, self.tcp_connection_lost), self.host, self.tcp_port)
         server, _ = self.loop.run_until_complete(coro) 
         
-        connect = self.loop.create_datagram_endpoint(lambda: UDPClientProtocol(self.__udp_connection_made, self.__udp_datagram_received), remote_addr=(self.host, self.udp_port))
+        connect = self.loop.create_datagram_endpoint(lambda: UDPClientProtocol(self.udp_connection_made, self.udp_datagram_received), remote_addr=(self.host, self.udp_port))
         transport, protocol = self.loop.run_until_complete(connect)
         self.connected = True
         self.loop.run_forever()
