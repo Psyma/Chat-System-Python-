@@ -29,100 +29,127 @@ class Client():
         self.fullname_map: dict[str, str] = {}
         self.sockname: tuple = None
         self.connected: bool = False 
-        self.tcp_transport: asyncio.Transport = None
+        self.file_transport: asyncio.Transport = None
+        self.string_transport: asyncio.Transport = None
         self.users_map: dict[str, dict[str, bool | str]] = {}
         self.users_chat_map: dict[str, dict[str, Queue | list]] = {}  
+        self.filesize = 0
+        self.can_send_file = True
+        self.filename = ""
+        self.is_sending_file_failed = False
+        #self.percentage = 0
+        self.sending_files_map = {}
 
     def tcp_connection_made(self, transport: asyncio.Transport):
-        self.tcp_transport = transport
+        self.string_transport = transport
         self.peername = transport.get_extra_info('peername')
         self.sockname = transport.get_extra_info('sockname')  
 
     def tcp_data_received(self, data: bytes): 
-        data: Message = pickle.loads(data)
-
-        if data.type == MessageType.CONNECTED: 
-            pass
-        elif data.type == MessageType.DISCONNECTED:
-            for user, value in self.users_map.items():
-                if user == data.sender:
-                    value['online'] = False 
-        elif data.type == MessageType.MESSAGE:  
-            if data.message or data.filename:   
-                ok = False
-                if data.sender == self.username:
-                    ok = True
-                    name = "You"
-                    key = data.receiver
-                elif data.receiver == self.username:
-                    ok = True
-                    key = data.sender
-                    name = self.fullname_map[data.sender]
-                self.users_chat_map[key]['messages'].append({ 
-                    'name': name.split(" ")[0],
-                    'message': data.message,
-                    'filename': data.filename,
-                    'timestamp': data.timestamp, 
-                })  
-                self.users_map[key]['last-message'] = data.message if data.message else data.filename
-                temp = {}
-                temp[key] = self.users_map[key]
-                for _key, value in self.users_map.items():
-                    if _key != key:
-                        temp[_key] = value
-                self.users_map = temp  
-        elif data.type == MessageType.REGISTER:
-            print(data.message)
-        elif data.type == MessageType.LOGIN:
-            print(data.message)
-        elif data.type == MessageType.CONNECTED_USERS: 
-            for user in data.connected_users:  
-                self.fullname_map[user.username] = user.fullname
-                if user.username in self.users_map:
-                    self.users_map[user.username]['online'] = user.isonline
-                    self.users_map[user.username]['new-message'] = user.new_message
-                else:
-                    self.users_map[user.username] = {
-                        'online': user.isonline,
-                        'new-message': user.new_message,
-                        'last-message': None
-                    }  
-                if user.username not in self.users_chat_map:
-                    self.users_chat_map[user.username] = {
-                        'images': Queue(),
-                        'audios': Queue(),
-                        'messages': list(),
-                }
-        elif data.type == MessageType.CHATS_HISTORY:    
-            keys = {}
-            for chat in data.history_messages:  
-                ok = False
-                if chat.sender == self.username:
-                    ok = True
-                    name = "You"
-                    key = chat.receiver
-                elif chat.receiver == self.username:
-                    ok = True
-                    key = chat.sender
-                    name = self.fullname_map[chat.sender]
-                if key not in keys:
-                    keys[key] = 1
-                    self.users_chat_map[key] = {
-                        'images': Queue(),
-                        'audios': Queue(),
-                        'messages': list(),
-                    }
-                if ok: 
-                    self.users_chat_map[key]['messages'].append({
-                        'name': name.split(" ")[0],
-                        'message': chat.message,
-                        'filename': chat.filename,
-                        'timestamp': chat.timestamp, 
-                    }) 
-                    self.users_map[key]['last-message'] = chat.message if chat.message else chat.filename 
-
+        b = bytearray()
+        buffer = data
+        while len(buffer):
+            b += buffer[:1]
+            buffer = buffer[1:]
+            try: 
+                data: Message = pickle.loads(b) 
+                if data.type == MessageType.CONNECTED: 
+                    pass
+                elif data.type == MessageType.DISCONNECTED:
+                    for user, value in self.users_map.items():
+                        if user == data.sender:
+                            value['online'] = False 
+                elif data.type == MessageType.MESSAGE:  
+                    if data.message or data.filename:   
+                        ok = False
+                        if data.sender == self.username:
+                            ok = True
+                            name = "You"
+                            key = data.receiver
+                        elif data.receiver == self.username:
+                            ok = True
+                            key = data.sender
+                            name = self.fullname_map[data.sender]
+                        self.users_chat_map[key]['messages'].append({ 
+                            'name': name.split(" ")[0],
+                            'message': data.message,
+                            'filename': data.filename,
+                            'timestamp': data.timestamp, 
+                        })  
+                        self.users_map[key]['last-message'] = data.message if data.message else data.filename
+                        temp = {}
+                        temp[key] = self.users_map[key]
+                        for _key, value in self.users_map.items():
+                            if _key != key:
+                                temp[_key] = value
+                        self.users_map = temp  
+                elif data.type == MessageType.REGISTER:
+                    print(data.message)
+                elif data.type == MessageType.LOGIN:
+                    print(data.message)
+                elif data.type == MessageType.CONNECTED_USERS: 
+                    for user in data.connected_users:  
+                        self.fullname_map[user.username] = user.fullname
+                        if user.username in self.users_map:
+                            self.users_map[user.username]['online'] = user.isonline
+                            self.users_map[user.username]['new-message'] = user.new_message
+                        else:
+                            self.users_map[user.username] = {
+                                'online': user.isonline,
+                                'new-message': user.new_message,
+                                'last-message': None
+                            }  
+                        if user.username not in self.users_chat_map:
+                            self.users_chat_map[user.username] = {
+                                'images': Queue(),
+                                'audios': Queue(),
+                                'messages': list(),
+                        }
+                elif data.type == MessageType.CHATS_HISTORY:    
+                    keys = {}
+                    for chat in data.history_messages:  
+                        ok = False
+                        if chat.sender == self.username:
+                            ok = True
+                            name = "You"
+                            key = chat.receiver
+                        elif chat.receiver == self.username:
+                            ok = True
+                            key = chat.sender
+                            name = self.fullname_map[chat.sender]
+                        if key not in keys:
+                            keys[key] = 1
+                            self.users_chat_map[key] = {
+                                'images': Queue(),
+                                'audios': Queue(),
+                                'messages': list(),
+                            }
+                        if ok: 
+                            self.users_chat_map[key]['messages'].append({
+                                'name': name.split(" ")[0],
+                                'message': chat.message,
+                                'filename': chat.filename,
+                                'timestamp': chat.timestamp, 
+                            }) 
+                            self.users_map[key]['last-message'] = chat.message if chat.message else chat.filename 
+                b = bytearray()
+            except:
+                pass
+    
     def tcp_connection_lost(self):
         pass
+
+    def tcp_file_connection_made(self, transport: asyncio.Transport):
+        self.file_transport = transport  
+
+    def tcp_file_data_received(self, data: bytes): 
+        data: Message = pickle.loads(data)
+        self.sending_files_map[self.filename] = int((int(data.message) / self.filesize) * 100)
+        if self.sending_files_map[self.filename] == 100:
+            self.can_send_file = True  
+    
+    def tcp_file_connection_lost(self):
+        self.is_sending_file_failed = True 
 
     def udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 
@@ -166,6 +193,9 @@ class Client():
         self.loop.set_default_executor(ThreadPoolExecutor(1000))
         coro = self.loop.create_connection(lambda: TCPClientProtocol(self.tcp_connection_made, self.tcp_data_received, self.tcp_connection_lost), self.host, self.tcp_port)
         server, _ = self.loop.run_until_complete(coro) 
+
+        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.tcp_file_connection_made, self.tcp_file_data_received, self.tcp_file_connection_lost), self.host, 2222)
+        server, _ = self.loop.run_until_complete(coro)
         
         connect = self.loop.create_datagram_endpoint(lambda: UDPClientProtocol(self.udp_connection_made, self.udp_datagram_received), remote_addr=(self.host, self.udp_port))
         transport, protocol = self.loop.run_until_complete(connect)

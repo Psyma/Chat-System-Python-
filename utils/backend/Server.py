@@ -28,12 +28,12 @@ class Server():
         self.tcp_port: int = tcp_port
         self.udp_port: int = udp_port
         self.server_logs: list[str] = []  
+        self.buffer_map: dict[tuple, bytearray] = {}
         self.udp_peername_map: dict[str, tuple] = {}
+        self.filebuffersize_map: dict[tuple, int] = {}
         self.sender_peername_map: dict[str, tuple] = {} 
         self.transport_map: dict[tuple, asyncio.Transport] = {}
-        self.buffer_map: dict[tuple, bytearray] = {}
         self.udp_transport_map: dict[tuple, asyncio.DatagramTransport] = {}
-        
         self.images_path = ROOT_DIR + "/images"
         self.uploads_path = ROOT_DIR + "/uploads" 
 
@@ -46,11 +46,7 @@ class Server():
             fields = {
                 'isonline': 0,
             }
-            self.repo.update(user.username, Status, **fields) 
-
-        self.buffersize = 0
-        self.bufferQ = Queue()
-        self.buffsizeQ = Queue() 
+            self.repo.update(user.username, Status, **fields)  
 
     async def disconnected(self, transport: asyncio.BaseTransport):
         sender = None
@@ -241,14 +237,13 @@ class Server():
     
     def tcp_data_received(self, data: bytes, transport: asyncio.BaseTransport):  
         peername = transport.get_extra_info('peername')
-        if peername not in self.buffer_map:
+        if peername not in self.buffer_map: 
             self.buffer_map[peername] = bytearray()
+            
+        self.buffer_map[peername] += data 
 
-        self.buffer_map[peername] += data
-
-        buffer = self.buffer_map[peername] 
         try:
-            data: Message = pickle.loads(buffer) 
+            data: Message = pickle.loads(self.buffer_map[peername])
             if data.type == MessageType.CONNECTED:
                 asyncio.ensure_future(self.connected(data))
             elif data.type == MessageType.MESSAGE:  
@@ -256,12 +251,47 @@ class Server():
             elif data.type == MessageType.REGISTER:
                 asyncio.ensure_future(self.register(data))
             elif data.type == MessageType.LOGIN:   
-                asyncio.ensure_future(self.login(data)) 
+                asyncio.ensure_future(self.login(data))
             self.buffer_map[peername] = bytearray()
         except:
-            pass 
+            pass
+        time.sleep(0.01)
 
     def tcp_connection_lost(self, transport: asyncio.BaseTransport):
+        asyncio.ensure_future(self.disconnected(transport))
+
+    def tcp_file_connection_made(self, transport: asyncio.BaseTransport):
+        peername = transport.get_extra_info('peername')
+        sockname = transport.get_extra_info('sockname') 
+        self.transport_map[peername] = transport    
+        self.server_logs.append("[{}] {} connected to the server".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), peername))
+    
+    def tcp_file_data_received(self, data: bytes, transport: asyncio.Transport):  
+        peername = transport.get_extra_info('peername')
+        if peername not in self.filebuffersize_map:
+            self.filebuffersize_map[peername] = 0
+        self.filebuffersize_map[peername] += len(data)
+        size = Message(
+                message=str(self.filebuffersize_map[peername])
+            )
+        size = pickle.dumps(size) 
+        transport.write(size)
+        if peername not in self.buffer_map: 
+            self.buffer_map[peername] = bytearray()
+            
+        self.buffer_map[peername] += data 
+
+        try:
+            data: Message = pickle.loads(self.buffer_map[peername])
+            if data.type == MessageType.FILE:
+                asyncio.ensure_future(self.file(data)) 
+            self.buffer_map[peername] = bytearray()
+            self.filebuffersize_map[peername] = 0
+        except:
+            pass
+        time.sleep(0.01)
+
+    def tcp_file_connection_lost(self, transport: asyncio.BaseTransport):
         asyncio.ensure_future(self.disconnected(transport))
 
     def udp_connection_made(self, transport: asyncio.DatagramTransport):
@@ -277,9 +307,12 @@ class Server():
             self.udp_transport_map[self.udp_peername_map[data.sender]].sendto(pickle.dumps(data), self.udp_peername_map[data.receiver])  
  
     def start(self): 
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.get_event_loop() 
         self.loop.set_default_executor(ThreadPoolExecutor(1000))
         coro = self.loop.create_server(lambda: TCPServerProtocol(self.tcp_connection_made, self.tcp_data_received, self.tcp_connection_lost), self.host, self.tcp_port)
+        server = self.loop.run_until_complete(coro)
+
+        coro = self.loop.create_server(lambda: TCPServerProtocol(self.tcp_file_connection_made, self.tcp_file_data_received, self.tcp_file_connection_lost), self.host, 2222)
         server = self.loop.run_until_complete(coro)
     
         connect = self.loop.create_datagram_endpoint(lambda: UDPServerProtocol(self.udp_connection_made, self.udp_datagram_received), local_addr=(self.host, self.udp_port))

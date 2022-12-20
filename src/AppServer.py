@@ -39,6 +39,6 @@ class AppServer(Gui):
     def start(self):
         self.server.start()
         
-if __name__ == "__main__": 
+if __name__ == "__main__":  
     app = AppServer(host='127.0.0.1') 
     app.start()

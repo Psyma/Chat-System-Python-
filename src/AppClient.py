@@ -24,6 +24,7 @@ CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(CUR_DIR, '..')
 sys.path.append(ROOT_DIR)
 
+from queue import Queue
 from utils.frontend.Gui import Gui 
 from utils.frontend.Login import Login
 from utils.backend.Client import Client
@@ -74,7 +75,9 @@ class AppClient(Gui):
         self.delay = 4
         self.counter = 1
         self.delay_counter = 1
-        self.upload_limit = 50 
+        self.upload_limit = 2**50
+        self.uploadQ = Queue()
+        self.sending_files_map = {}
 
     def start(self): 
         self.t = Thread(target=self.show_frames, args=())
@@ -89,7 +92,7 @@ class AppClient(Gui):
                 pass
             time.sleep(1) 
 
-    def frame_commands(self):   
+    def frame_commands(self):    
         if self.client.connected and not self.is_connected:
             self.is_connected = True
             data = Message(
@@ -99,18 +102,28 @@ class AppClient(Gui):
                 type = MessageType.CONNECTED
             )  
             self.send_string(data)
-          
+
+        if not self.uploadQ.empty() and self.client.can_send_file:
+            self.client.can_send_file = False
+            func = self.uploadQ.get()
+            func()
+
         self.profile() 
         if self.is_display_chatbox:
             self.chatbox()
-        self.loading()  
+        self.loading()    
 
     def loading(self):
+        imgui.set_next_window_focus() 
         imgui.set_next_window_size(165, 100)
         imgui.set_next_window_position((self.window_width - 165) * .50, (self.window_height - 100) * .50)
         if not self.is_connected:
             imgui.push_id('info-3')
             imgui.open_popup("[INFO]")
+            self.client.can_send_file = True 
+            for filename, percentage in self.sending_files_map.items():
+                if self.client.sending_files_map[filename] != 100:
+                    self.client.sending_files_map[filename] = "Failed"
         if imgui.begin_popup_modal("[INFO]", flags=imgui.WINDOW_NO_RESIZE)[0]: 
             text = "Conneting to server"
             width, height = imgui.get_window_size()
@@ -140,7 +153,7 @@ class AppClient(Gui):
             imgui.pop_id()
 
     def send_string(self, data: Message):
-        self.string_stream.send(data, self.client.tcp_transport) 
+        self.string_stream.send(data, self.client.string_transport) 
         
     def send_image(self, frame, size = 65536): 
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -268,7 +281,7 @@ class AppClient(Gui):
 
             if True:
                 imgui.same_line()
-                imgui.begin_child("1.2", border=True)
+                imgui.begin_child("1.2", border=True) 
                 imgui.set_cursor_pos_y(13)
                 if imgui.button("Video Call"):
                     pass
@@ -293,7 +306,7 @@ class AppClient(Gui):
                         sender_peername = self.client.sockname, 
                         type = MessageType.MESSAGE
                     ) 
-                    self.send_string(data)  
+                    self.send_string(data)
 
                 imgui.set_keyboard_focus_here()
             imgui.same_line()
@@ -301,7 +314,7 @@ class AppClient(Gui):
                 filepath = easygui.fileopenbox() 
                 if filepath != None:
                     filesize = os.path.getsize(filepath)
-                    if True: #round(filesize / 1_000_000) <= self.upload_limit: 
+                    if round(filesize / 1_000_000) <= self.upload_limit: 
                         with open(filepath, 'rb') as file: 
                             filename = pathlib.Path(filepath).name
                             data = Message(
@@ -314,8 +327,17 @@ class AppClient(Gui):
                                 timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
                                 sender_peername = self.client.sockname, 
                                 type = MessageType.FILE
-                            )  
-                            self.send_string(data) 
+                            )
+
+                            def upload(data: Message, client: Client):
+                                client.filesize = data.filesize
+                                client.filename = data.filename
+                                data = pickle.dumps(data)
+                                client.file_transport.write(data)
+
+                            self.client.sending_files_map[data.filename] = 0
+                            self.uploadQ.put(lambda: upload(data, self.client))
+                            self.sending_files_map[data.filename] = lambda: upload(data, self.client)
                     else: 
                         pass # TODO: info message
             imgui.same_line()
@@ -326,7 +348,55 @@ class AppClient(Gui):
                 pass
             
             if True: 
-                imgui.begin_child("3", border=True)  
+                imgui.begin_child("3", border=True)   
+                width, height = imgui.get_window_size()
+                x, y = imgui.get_window_position() 
+                imgui.set_next_window_focus() 
+                imgui.set_next_window_size(310, height)
+                imgui.set_next_window_position((width + x) - 310, y)
+                imgui.begin("Sending files")
+                imgui.columns(3, 'file_list') 
+                imgui.set_column_width(1, 85)
+                imgui.set_column_width(2, 120)
+                imgui.separator()
+                imgui.text("Filename")
+                imgui.next_column()
+                imgui.text("Percentage")
+                imgui.next_column()  
+                imgui.text("Action")
+                imgui.next_column()  
+                imgui.separator() 
+                
+                for filename, func in list(self.sending_files_map.items()):
+                    stem = pathlib.Path(filename).stem
+                    suffix = pathlib.Path(filename).suffix
+                    name = "{}...{}{}".format(stem[:3], stem[-2:], suffix)
+                    imgui.text(name)
+                    if imgui.is_item_hovered():
+                        imgui.set_tooltip(filename)
+                    imgui.next_column()  
+                    if self.client.sending_files_map[filename] == "Failed":
+                        imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0)
+                    else:
+                        imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)
+                    imgui.text("{}%".format(self.client.sending_files_map[filename]) if str(self.client.sending_files_map[filename]).isnumeric() else self.client.sending_files_map[filename])
+                    imgui.pop_style_color()
+                    imgui.next_column()  
+                    imgui.push_id(filename + "Resend")
+                    if imgui.button("Resend"):
+                        if self.client.can_send_file:
+                            self.client.can_send_file = False
+                            func()
+                    imgui.pop_id()
+                    imgui.same_line()
+                    imgui.push_id(filename + "Remove")
+                    if imgui.button("Remove"):
+                        if self.client.sending_files_map[filename] == 100 or self.client.sending_files_map[filename] == "Failed":
+                            del self.sending_files_map[filename]
+                    imgui.pop_id()
+                    imgui.next_column()  
+                imgui.columns(1)
+                imgui.end()
                 for user, value in self.client.users_chat_map.items():
                     if user == self.to_user:  
                         for i in range(len(value['messages']) - 1, -1, -1):
@@ -430,15 +500,14 @@ class AppClient(Gui):
         self.is_display_frame = self.display_frames(self.fonts_map)  
         self.client.stop()  
     
-if __name__ == "__main__":        
-    # TODO: sending files percentage
+if __name__ == "__main__":         
     # TODO: view image & video
     # TODO: change profile picture
     # TODO: video & audio call 
     host = '127.0.0.1'
     login = Login(host=host)
     login.start() 
-    if login.login_success:
+    if login.is_login_success:
         client = AppClient(host=host, is_resizeable=True)
-        client.client.username = login.username 
+        client.client.username = login.login_username 
         client.start() 
