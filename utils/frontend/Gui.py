@@ -68,11 +68,12 @@ class Gui(object):
         self.impl = GlfwRenderer(self.window)
 
         io = imgui.get_io()
+        io.fonts.add_font_default()
         jb = io.fonts.add_font_from_file_ttf(path_to_font, 30) if path_to_font is not None else None
         for key, value in fonts_map.items():
             font_size = value['font-size']
             font_path = value['font-path']
-            font_obj = io.fonts.add_font_from_file_ttf(font_path, font_size)
+            font_obj = io.fonts.add_font_from_file_ttf(font_path, font_size, io.fonts.get_glyph_ranges_chinese_full())
             value['font-obj'] = font_obj
         
         self.fonts_map = fonts_map

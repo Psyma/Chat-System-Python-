@@ -53,14 +53,14 @@ class AppClient(Gui):
 
         self.debug = False
         self.to_user: str = ""   
-        self.is_display_chatbox: bool = False
-        self.is_display_frame: bool = True
         self.is_audio_call: bool = False
-        self.fonts_map: dict[str, dict[str, None | int | str]] = self.set_fonts()
-        self.client = Client(host=host, tcp_port=tcp_port, udp_port=udp_port)
-        self.string_stream = StringStream()
         self.video_stream = VideoStream(0) 
+        self.is_display_frame: bool = True
+        self.string_stream = StringStream()
+        self.is_display_chatbox: bool = False
         self.audio_stream = AudioStream(MS, RATE, AUDIO, FORMAT, CHANNELS)    
+        self.client = Client(host=host, tcp_port=tcp_port, udp_port=udp_port)
+        self.fonts_map: dict[str, dict[str, None | int | str]] = self.set_fonts()
 
         self.password: str = ""  
         self.is_login: bool = False
@@ -71,13 +71,16 @@ class AppClient(Gui):
         self.register_firstname: str = ""
         self.register_middlename: str = ""
         self.register_lastname: str = ""  
-        self.is_connected = False 
-        self.delay = 4
-        self.counter = 1
-        self.delay_counter = 1
-        self.upload_limit = 2**50
-        self.uploadQ = Queue()
-        self.sending_files_map = {}
+
+        self.delay_counter: int = 1
+        self.loading_delay: int = 4
+        self.upload_limit: int = 300
+        self.uploadingQs: Queue = Queue()
+        self.downloadingQs: Queue = Queue()
+        self.is_connected: bool = False 
+        self.loading_delay_counter: int = 1
+        self.sending_files_map: dict[str, str] = {}
+        self.downloading_files_map: dict[str, str] = {}
 
     def start(self): 
         self.t = Thread(target=self.show_frames, args=())
@@ -92,26 +95,136 @@ class AppClient(Gui):
                 pass
             time.sleep(1) 
 
-    def frame_commands(self):    
+    def frame_commands(self):  
         if self.client.connected and not self.is_connected:
             self.is_connected = True
             data = Message(
                 sender = self.client.username, 
-                sender_peername = self.client.sockname,
-                timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                sender_peername = self.client.string_sockname,
+                timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
                 type = MessageType.CONNECTED
             )  
             self.send_string(data)
 
-        if not self.uploadQ.empty() and self.client.can_send_file:
-            self.client.can_send_file = False
-            func = self.uploadQ.get()
-            func()
-
+        self.upload_files_Qs()
+        self.download_files_Qs()
         self.profile() 
         if self.is_display_chatbox:
             self.chatbox()
-        self.loading()    
+        self.loading()   
+
+    def uploading(self): 
+        width, height = imgui.get_window_size()
+        x, y = imgui.get_window_position() 
+        imgui.set_next_window_focus() 
+        imgui.set_next_window_size(width / 2, height)
+        imgui.set_next_window_position(x, y)
+        imgui.begin("Uploading files") 
+        imgui.columns(3, 'upload_list') 
+        imgui.set_column_width(1, 85)
+        imgui.set_column_width(2, 120)
+        imgui.separator()
+        imgui.text("Filename")
+        imgui.next_column()
+        imgui.text("Percentage")
+        imgui.next_column()  
+        imgui.text("Action")
+        imgui.next_column()  
+        imgui.separator() 
+        
+        for filename, func in list(self.sending_files_map.items()):
+            stem = pathlib.Path(filename).stem
+            suffix = pathlib.Path(filename).suffix
+            name = "{}...{}{}".format(stem[:3], stem[-2:], suffix)
+            imgui.text(name)
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(filename)
+            imgui.next_column()  
+            if self.client.uploading_files_map[filename] == "Failed":
+                imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0)
+            else:
+                imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)
+            imgui.text("{}%".format(self.client.uploading_files_map[filename]) if str(self.client.uploading_files_map[filename]).isnumeric() else self.client.uploading_files_map[filename])
+            imgui.pop_style_color()
+            imgui.next_column()  
+            imgui.push_id(filename + "Resend")
+            if imgui.button("Resend"):
+                if self.client.can_upload_file:
+                    self.client.can_upload_file = False
+                    func()
+            imgui.pop_id()
+            imgui.same_line()
+            imgui.push_id(filename + "Remove")
+            if imgui.button("Remove"):
+                if self.client.uploading_files_map[filename] == 100 or self.client.uploading_files_map[filename] == "Failed":
+                    del self.sending_files_map[filename]
+            imgui.pop_id()
+            imgui.next_column()  
+        imgui.columns(1)
+        imgui.end() 
+    
+    def downloading(self):
+        width, height = imgui.get_window_size()
+        x, y = imgui.get_window_position() 
+        imgui.set_next_window_focus() 
+        imgui.set_next_window_size(width / 2, height)
+        imgui.set_next_window_position(x + (width / 2), y)
+        imgui.begin("Downloading files")
+        imgui.columns(3, 'download_list') 
+        imgui.set_column_width(1, 85)
+        imgui.set_column_width(2, 120)
+        imgui.separator()
+        imgui.text("Filename")
+        imgui.next_column()
+        imgui.text("Percentage")
+        imgui.next_column()  
+        imgui.text("Action")
+        imgui.next_column()  
+        imgui.separator() 
+
+        for filename, func in list(self.downloading_files_map.items()):
+            stem = pathlib.Path(filename).stem
+            suffix = pathlib.Path(filename).suffix
+            name = "{}...{}{}".format(stem[:3], stem[-2:], suffix)
+            imgui.text(name)
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(filename)
+            imgui.next_column()  
+            if self.client.downloading_files_map[filename] == "Failed":
+                imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0)
+            else:
+                imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)
+            imgui.text("{}%".format(self.client.downloading_files_map[filename]) if str(self.client.downloading_files_map[filename]).isnumeric() else self.client.downloading_files_map[filename])
+            imgui.pop_style_color()
+            imgui.next_column()  
+            imgui.push_id(filename + "Resend")
+            if imgui.button("Resend"):
+                if self.client.can_download_file:
+                    self.client.can_download_file = False
+                    func()
+            imgui.pop_id()
+            imgui.same_line()
+            imgui.push_id(filename + "Remove")
+            if imgui.button("Remove"):
+                if self.client.downloading_files_map[filename] == 100 or self.client.downloading_files_map[filename] == "Failed":
+                    del self.downloading_files_map[filename]
+            imgui.pop_id()
+            imgui.next_column()
+
+        imgui.columns(1)
+        imgui.end()
+
+    def upload_files_Qs(self):
+        if not self.uploadingQs.empty() and self.client.can_upload_file:
+            self.client.can_upload_file = False
+            func = self.uploadingQs.get()
+            func()
+
+    def download_files_Qs(self):
+        if not self.downloadingQs.empty() and self.client.can_download_file:
+            self.client.can_download_file = False
+            func = self.downloadingQs.get()
+            func()
 
     def loading(self):
         imgui.set_next_window_focus() 
@@ -120,10 +233,14 @@ class AppClient(Gui):
         if not self.is_connected:
             imgui.push_id('info-3')
             imgui.open_popup("[INFO]")
-            self.client.can_send_file = True 
+            self.client.can_upload_file = True 
+            self.client.can_download_file = True
             for filename, percentage in self.sending_files_map.items():
-                if self.client.sending_files_map[filename] != 100:
-                    self.client.sending_files_map[filename] = "Failed"
+                if self.client.uploading_files_map[filename] != 100:
+                    self.client.uploading_files_map[filename] = "Failed" 
+            for filename, percentage in self.downloading_files_map.items():
+                if self.client.downloading_files_map[filename] != 100:
+                    self.client.downloading_files_map[filename] = "Failed"
         if imgui.begin_popup_modal("[INFO]", flags=imgui.WINDOW_NO_RESIZE)[0]: 
             text = "Conneting to server"
             width, height = imgui.get_window_size()
@@ -135,19 +252,19 @@ class AppClient(Gui):
             
             self.delay_counter = self.delay_counter + 1 
             for i in range(1, 8, 1):
-                if i == self.counter: 
+                if i == self.loading_delay_counter: 
                     imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)  
                     imgui.bullet()
                     imgui.pop_style_color()
                 else:
                     imgui.bullet()
 
-            if self.counter == 7:
-                if self.delay_counter == self.delay:
-                    self.counter = 0
-            if self.delay_counter == self.delay:
+            if self.loading_delay_counter == 7:
+                if self.delay_counter == self.loading_delay:
+                    self.loading_delay_counter = 0
+            if self.delay_counter == self.loading_delay:
                 self.delay_counter = 0
-                self.counter = self.counter + 1
+                self.loading_delay_counter = self.loading_delay_counter + 1
             
             imgui.end_popup()
             imgui.pop_id()
@@ -167,7 +284,7 @@ class AppClient(Gui):
                 image_len=len(chunks) - 1,  
                 sender=self.client.username, 
                 receiver=self.to_user, 
-                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
                 type=MessageType.MESSAGE
             ) 
                                 
@@ -180,7 +297,7 @@ class AppClient(Gui):
             audio=frame, 
             sender=self.client.username, 
             receiver=self.to_user, 
-            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
             type=MessageType.MESSAGE
         ) 
         
@@ -240,6 +357,11 @@ class AppClient(Gui):
                 "font-obj" : None,
                 "font-size" : 40,
                 "font-path" : ROOT_DIR + "/assets/Drift.ttf"
+            },
+            "profile-fonts-ArialUnicodeMS" : {
+                "font-obj" : None,
+                "font-size" : 14.5,
+                "font-path" : ROOT_DIR + "/assets/ArialUnicodeMS.ttf"
             },
         } 
 
@@ -302,8 +424,8 @@ class AppClient(Gui):
                         message = text_val, 
                         sender = self.client.username, 
                         receiver = self.to_user, 
-                        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                        sender_peername = self.client.sockname, 
+                        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
+                        sender_peername = self.client.string_sockname, 
                         type = MessageType.MESSAGE
                     ) 
                     self.send_string(data)
@@ -319,25 +441,24 @@ class AppClient(Gui):
                             filename = pathlib.Path(filepath).name
                             data = Message(
                                 sender=self.client.username,
-                                file = file.read(),  
-                                filename = filename,
-                                filesize = filesize, 
+                                upload_filebytes = file.read(),  
+                                upload_filename = filename,
+                                upload_file_size = filesize, 
                                 receiver = self.to_user, 
-                                file_reference="{}-{}-{}".format(time.time(), self.client.username, self.to_user),
-                                timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
-                                sender_peername = self.client.sockname, 
+                                timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
+                                sender_peername = self.client.string_sockname, 
                                 type = MessageType.FILE
                             )
 
                             def upload(data: Message, client: Client):
-                                client.filesize = data.filesize
-                                client.filename = data.filename
+                                client.upload_filename = data.upload_filename
                                 data = pickle.dumps(data)
-                                client.file_transport.write(data)
+                                client.upload_file_size = len(data)
+                                client.upload_transport.write(data)
 
-                            self.client.sending_files_map[data.filename] = 0
-                            self.uploadQ.put(lambda: upload(data, self.client))
-                            self.sending_files_map[data.filename] = lambda: upload(data, self.client)
+                            self.client.uploading_files_map[data.upload_filename] = 0
+                            self.uploadingQs.put(lambda: upload(data, self.client))
+                            self.sending_files_map[data.upload_filename] = lambda: upload(data, self.client)
                     else: 
                         pass # TODO: info message
             imgui.same_line()
@@ -347,65 +468,25 @@ class AppClient(Gui):
             if imgui.button("GIF"):
                 pass
             
+            imgui.begin_child("3", border=True)   
+            self.uploading()
+            self.downloading()
+            imgui.invisible_button("Button", 200, 10)
             if True: 
-                imgui.begin_child("3", border=True)   
-                width, height = imgui.get_window_size()
-                x, y = imgui.get_window_position() 
-                imgui.set_next_window_focus() 
-                imgui.set_next_window_size(310, height)
-                imgui.set_next_window_position((width + x) - 310, y)
-                imgui.begin("Sending files")
-                imgui.columns(3, 'file_list') 
-                imgui.set_column_width(1, 85)
-                imgui.set_column_width(2, 120)
-                imgui.separator()
-                imgui.text("Filename")
-                imgui.next_column()
-                imgui.text("Percentage")
-                imgui.next_column()  
-                imgui.text("Action")
-                imgui.next_column()  
-                imgui.separator() 
-                
-                for filename, func in list(self.sending_files_map.items()):
-                    stem = pathlib.Path(filename).stem
-                    suffix = pathlib.Path(filename).suffix
-                    name = "{}...{}{}".format(stem[:3], stem[-2:], suffix)
-                    imgui.text(name)
-                    if imgui.is_item_hovered():
-                        imgui.set_tooltip(filename)
-                    imgui.next_column()  
-                    if self.client.sending_files_map[filename] == "Failed":
-                        imgui.push_style_color(imgui.COLOR_TEXT, 1, 0, 0)
-                    else:
-                        imgui.push_style_color(imgui.COLOR_TEXT, 0, 1, 0)
-                    imgui.text("{}%".format(self.client.sending_files_map[filename]) if str(self.client.sending_files_map[filename]).isnumeric() else self.client.sending_files_map[filename])
-                    imgui.pop_style_color()
-                    imgui.next_column()  
-                    imgui.push_id(filename + "Resend")
-                    if imgui.button("Resend"):
-                        if self.client.can_send_file:
-                            self.client.can_send_file = False
-                            func()
-                    imgui.pop_id()
-                    imgui.same_line()
-                    imgui.push_id(filename + "Remove")
-                    if imgui.button("Remove"):
-                        if self.client.sending_files_map[filename] == 100 or self.client.sending_files_map[filename] == "Failed":
-                            del self.sending_files_map[filename]
-                    imgui.pop_id()
-                    imgui.next_column()  
-                imgui.columns(1)
-                imgui.end()
                 for user, value in self.client.users_chat_map.items():
-                    if user == self.to_user:  
+                    if user == self.to_user:   
                         for i in range(len(value['messages']) - 1, -1, -1):
+                            id = value['messages'][i]['id']
                             name = value['messages'][i]['name'] 
                             message = value['messages'][i]['message'] 
                             timestamp = value['messages'][i]['timestamp'] 
                             filename = value['messages'][i]['filename']
-                            if str(search_text_val).casefold() in str(message).casefold():
-                                message = "[{}] [{}]: {}".format(timestamp, name.split(" ")[0], message if not filename else filename)
+                            filesize = value['messages'][i]['filesize']
+                            if str(search_text_val).casefold() in str(message).casefold() or str(search_text_val).casefold() in str(filename).casefold():
+                                if filename:
+                                    stem = pathlib.Path(filename).stem
+                                    suffix = pathlib.Path(filename).suffixes
+                                message = "[{}] [{}]: {}".format(timestamp, name.split(" ")[0], message if not filename else filename if len(filename) < 15 else stem[:15] + "..." + stem[-5:] + suffix[len(suffix) - 1])
                                 if "] [You]:" in message: 
                                     imgui.push_style_color(imgui.COLOR_TEXT, 1, 1, 1) 
                                 else:
@@ -413,10 +494,28 @@ class AppClient(Gui):
                                 imgui.text_wrapped(message)  
                                 imgui.pop_style_color()   
                                 if filename and imgui.is_item_hovered():
-                                    imgui.set_tooltip("attachment")
-                                    if imgui.core.is_item_clicked(0): 
-                                        print("Clicked!") # TODO view image & video
+                                    imgui.set_tooltip(filename)
+                                    if imgui.core.is_item_clicked(0):   
+                                        data = Message(
+                                            download_file_id=id,
+                                            download_filename=filename,
+                                            download_file_size=filesize,
+                                            sender=self.client.username,
+                                            receiver=self.to_user,
+                                            timestamp = timestamp, 
+                                            sender_peername = self.client.download_sockname, 
+                                            type=MessageType.DOWNLOAD
+                                        ) 
 
+                                        def download(data: Message, client: Client):
+                                            client.download_filename = data.download_filename
+                                            client.download_file_size = data.download_file_size
+                                            data = pickle.dumps(data)
+                                            client.string_transport.write(data)
+                                            
+                                        self.client.downloading_files_map[data.download_filename] = 0
+                                        self.downloadingQs.put(lambda: download(data, self.client))
+                                        self.downloading_files_map[data.download_filename] = lambda: download(data, self.client)
                 imgui.end_child()
             imgui.end_child()
         imgui.end()
@@ -500,7 +599,7 @@ class AppClient(Gui):
         self.is_display_frame = self.display_frames(self.fonts_map)  
         self.client.stop()  
     
-if __name__ == "__main__":         
+if __name__ == "__main__":      
     # TODO: view image & video
     # TODO: change profile picture
     # TODO: video & audio call 

@@ -1,9 +1,16 @@
 from __future__ import annotations 
+import os
+import sys
 import cv2 
 import pickle 
 import base64
 import asyncio
 import numpy as np
+import time
+
+CUR_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.join(CUR_DIR, '..')
+sys.path.append(ROOT_DIR)
 
 from queue import Queue
 from functools import wraps
@@ -21,46 +28,53 @@ from utils.protocols.UDPClientProtocol import UDPClientProtocol
 class Client():
     def __init__(self, host: str = '127.0.0.1', tcp_port: int = 9999, udp_port: int = 6666) -> None:
         self.host: str = host
-        self.tcp_port: int = tcp_port
-        self.udp_port: int = udp_port
         self.image: bytes = b''
         self.audio: bytes = b''
         self.username: str = "" 
-        self.fullname_map: dict[str, str] = {}
-        self.sockname: tuple = None
         self.connected: bool = False 
-        self.file_transport: asyncio.Transport = None
+        self.tcp_port: int = tcp_port
+        self.udp_port: int = udp_port
+        self.upload_file_size: int = 0
+        self.download_file_size: int = 0
+        self.can_upload_file: bool = True
+        self.can_download_file: bool = True
+        self.upload_filename: str = None
+        self.download_filename: str = None
+        self.string_sockname: tuple = None
+        self.fullname_map: dict[str, str] = {}
+        self.is_uploading_file_failed: bool = False 
+        self.is_downloading_file_failed: bool = False
+        self.downloads_path: str = ROOT_DIR + "/downloads" 
+        self.uploading_files_map: dict[str, int] = {}
+        self.downloading_files_map: dict[str, int] = {}
+        self.upload_transport: asyncio.Transport = None
         self.string_transport: asyncio.Transport = None
         self.users_map: dict[str, dict[str, bool | str]] = {}
         self.users_chat_map: dict[str, dict[str, Queue | list]] = {}  
-        self.filesize = 0
-        self.can_send_file = True
-        self.filename = ""
-        self.is_sending_file_failed = False
-        #self.percentage = 0
-        self.sending_files_map = {}
 
-    def tcp_connection_made(self, transport: asyncio.Transport):
+        if not os.path.exists(self.downloads_path):
+            os.mkdir(self.downloads_path)
+
+        self.file_buffer = []
+        self.buffer_map = {}
+        self.download_buffer = bytearray()
+    
+    def tcp_string_connection_made(self, transport: asyncio.Transport):
         self.string_transport = transport
-        self.peername = transport.get_extra_info('peername')
-        self.sockname = transport.get_extra_info('sockname')  
+        self.string_peername = transport.get_extra_info('peername')
+        self.string_sockname = transport.get_extra_info('sockname')  
 
-    def tcp_data_received(self, data: bytes): 
-        b = bytearray()
-        buffer = data
-        while len(buffer):
-            b += buffer[:1]
-            buffer = buffer[1:]
-            try: 
-                data: Message = pickle.loads(b) 
-                if data.type == MessageType.CONNECTED: 
+    def tcp_string_data_received(self, data: bytes):  
+        try: 
+            data: Message = pickle.loads(data)  
+            if data.type == MessageType.CONNECTED: 
                     pass
-                elif data.type == MessageType.DISCONNECTED:
+            elif data.type == MessageType.DISCONNECTED:
                     for user, value in self.users_map.items():
                         if user == data.sender:
                             value['online'] = False 
-                elif data.type == MessageType.MESSAGE:  
-                    if data.message or data.filename:   
+            elif data.type == MessageType.MESSAGE:  
+                    if data.message or data.upload_filename:    
                         ok = False
                         if data.sender == self.username:
                             ok = True
@@ -71,23 +85,25 @@ class Client():
                             key = data.sender
                             name = self.fullname_map[data.sender]
                         self.users_chat_map[key]['messages'].append({ 
+                            'id': data.message_id,
                             'name': name.split(" ")[0],
                             'message': data.message,
-                            'filename': data.filename,
+                            'filename': data.upload_filename,
+                            'filesize': data.upload_file_size,
                             'timestamp': data.timestamp, 
                         })  
-                        self.users_map[key]['last-message'] = data.message if data.message else data.filename
+                        self.users_map[key]['last-message'] = data.message if data.message else data.upload_filename
                         temp = {}
                         temp[key] = self.users_map[key]
                         for _key, value in self.users_map.items():
                             if _key != key:
                                 temp[_key] = value
                         self.users_map = temp  
-                elif data.type == MessageType.REGISTER:
+            elif data.type == MessageType.REGISTER:
                     print(data.message)
-                elif data.type == MessageType.LOGIN:
+            elif data.type == MessageType.LOGIN:
                     print(data.message)
-                elif data.type == MessageType.CONNECTED_USERS: 
+            elif data.type == MessageType.CONNECTED_USERS: 
                     for user in data.connected_users:  
                         self.fullname_map[user.username] = user.fullname
                         if user.username in self.users_map:
@@ -105,7 +121,7 @@ class Client():
                                 'audios': Queue(),
                                 'messages': list(),
                         }
-                elif data.type == MessageType.CHATS_HISTORY:    
+            elif data.type == MessageType.CHATS_HISTORY:    
                     keys = {}
                     for chat in data.history_messages:  
                         ok = False
@@ -126,30 +142,68 @@ class Client():
                             }
                         if ok: 
                             self.users_chat_map[key]['messages'].append({
+                                'id': chat.id,
                                 'name': name.split(" ")[0],
                                 'message': chat.message,
                                 'filename': chat.filename,
+                                'filesize': chat.filesize,
                                 'timestamp': chat.timestamp, 
                             }) 
                             self.users_map[key]['last-message'] = chat.message if chat.message else chat.filename 
-                b = bytearray()
-            except:
-                pass
-    
-    def tcp_connection_lost(self):
+            elif data.type == MessageType.DOWNLOAD_FILE_PERCENTAGE:
+                self.download_filename = data.download_filename
+                self.download_file_size = data.download_file_size
+        except:
+            pass    
+        time.sleep(0.01)
+ 
+    def tcp_string_connection_lost(self):
         pass
 
-    def tcp_file_connection_made(self, transport: asyncio.Transport):
-        self.file_transport = transport  
+    def tcp_upload_connection_made(self, transport: asyncio.Transport):
+        self.upload_transport = transport  
+        self.upload_peername = transport.get_extra_info('peername')
+        self.upload_sockname = transport.get_extra_info('sockname')  
 
-    def tcp_file_data_received(self, data: bytes): 
-        data: Message = pickle.loads(data)
-        self.sending_files_map[self.filename] = int((int(data.message) / self.filesize) * 100)
-        if self.sending_files_map[self.filename] == 100:
-            self.can_send_file = True  
-    
-    def tcp_file_connection_lost(self):
-        self.is_sending_file_failed = True 
+    def tcp_upload_data_received(self, data: bytes):  
+        try:
+            data: Message = pickle.loads(data)
+            if data.type == MessageType.UPLOAD_FILE_PERCENTAGE:
+                self.uploading_files_map[self.upload_filename] = int((int(data.upload_file_percent) / self.upload_file_size) * 100)
+                if self.uploading_files_map[self.upload_filename] == 100:
+                    self.upload_filename = None
+                    self.can_upload_file = True  
+        except:
+            pass
+        time.sleep(0.01)
+
+    def tcp_upload_connection_lost(self):
+        self.is_uploading_file_failed = True 
+
+    def tcp_download_connection_made(self, transport: asyncio.Transport):
+        self.download_transport = transport  
+        self.download_peername = transport.get_extra_info('peername')
+        self.download_sockname = transport.get_extra_info('sockname')  
+
+    def tcp_download_data_received(self, data: bytes):  
+        self.download_buffer += data 
+        self.downloading_files_map[self.download_filename] = int((len(self.download_buffer) / int(self.download_file_size)) * 100)
+
+        try:
+            data: Message = pickle.loads(self.download_buffer)
+            path = self.downloads_path + "/" + datetime.now().strftime('%m%d%Y%H%M%S.%f')
+            if not os.path.exists(path):
+                os.mkdir(path)
+            with open(path + "/" + data.download_filename, 'wb') as file:
+                file.write(data.download_filebytes)
+            self.can_download_file = True
+            self.download_buffer = bytearray()
+        except Exception as e:
+            pass
+        time.sleep(0.01)
+
+    def tcp_download_connection_lost(self):
+        self.is_downloading_file_failed = True  
 
     def udp_connection_made(self, transport: asyncio.DatagramTransport):
         self.udp_transport = transport 
@@ -157,7 +211,7 @@ class Client():
         self.udp_sockname = transport.get_extra_info('sockname') 
         data = Message(
             sender=self.username, 
-            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+            timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
             sender_peername=self.udp_sockname, 
             type=MessageType.CONNECTED
         )
@@ -191,10 +245,14 @@ class Client():
         asyncio.set_event_loop(asyncio.new_event_loop())
         self.loop = asyncio.get_event_loop()
         self.loop.set_default_executor(ThreadPoolExecutor(1000))
-        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.tcp_connection_made, self.tcp_data_received, self.tcp_connection_lost), self.host, self.tcp_port)
+
+        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.tcp_string_connection_made, self.tcp_string_data_received, self.tcp_string_connection_lost), self.host, self.tcp_port)
         server, _ = self.loop.run_until_complete(coro) 
 
-        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.tcp_file_connection_made, self.tcp_file_data_received, self.tcp_file_connection_lost), self.host, 2222)
+        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.tcp_upload_connection_made, self.tcp_upload_data_received, self.tcp_upload_connection_lost), self.host, 2222)
+        server, _ = self.loop.run_until_complete(coro)
+
+        coro = self.loop.create_connection(lambda: TCPClientProtocol(self.tcp_download_connection_made, self.tcp_download_data_received, self.tcp_download_connection_lost), self.host, 3333)
         server, _ = self.loop.run_until_complete(coro)
         
         connect = self.loop.create_datagram_endpoint(lambda: UDPClientProtocol(self.udp_connection_made, self.udp_datagram_received), remote_addr=(self.host, self.udp_port))

@@ -227,7 +227,7 @@ class Login(Gui):
             elif self.register_password == self.register_password_confirm and ok:
                 self.is_connecting_to_server = True 
                 data = Message(
-                    timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'),
+                    timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'),
                     register_username=self.register_username,
                     register_password=self.register_password,
                     register_firstname=self.register_firstname,
@@ -274,7 +274,7 @@ class Login(Gui):
                 sender=self.login_username, 
                 password=self.login_password,
                 sender_peername=self.sockname,
-                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
                 type=MessageType.LOGIN
             )
 
@@ -289,7 +289,7 @@ class Login(Gui):
                 sender=self.login_username, 
                 password=self.login_password,
                 sender_peername=self.sockname,
-                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), 
+                timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
                 type=MessageType.LOGIN
             ) 
 

@@ -4,12 +4,14 @@ import pickle
 import asyncio  
 import struct
 import time
+import pathlib
 
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(CUR_DIR, '..')
 sys.path.append(ROOT_DIR)
 
 from queue import Queue
+from threading import Thread
 from datetime import datetime    
 from utils.models.MessageType import MessageType
 from concurrent.futures import ThreadPoolExecutor 
@@ -28,14 +30,14 @@ class Server():
         self.tcp_port: int = tcp_port
         self.udp_port: int = udp_port
         self.server_logs: list[str] = []  
+        self.images_path: str = ROOT_DIR + "/images"
+        self.uploads_path: str = ROOT_DIR + "/uploads" 
         self.buffer_map: dict[tuple, bytearray] = {}
         self.udp_peername_map: dict[str, tuple] = {}
         self.filebuffersize_map: dict[tuple, int] = {}
         self.sender_peername_map: dict[str, tuple] = {} 
         self.transport_map: dict[tuple, asyncio.Transport] = {}
         self.udp_transport_map: dict[tuple, asyncio.DatagramTransport] = {}
-        self.images_path = ROOT_DIR + "/images"
-        self.uploads_path = ROOT_DIR + "/uploads" 
 
         if not os.path.exists(self.images_path):
             os.mkdir(self.images_path)
@@ -51,7 +53,7 @@ class Server():
     async def disconnected(self, transport: asyncio.BaseTransport):
         sender = None
         peername = transport.get_extra_info('peername')
-        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S')
+        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f')
         for sender1, peername1 in list(self.sender_peername_map.items()):
             if peername == peername1:
                 sender = sender1
@@ -66,7 +68,7 @@ class Server():
         del self.transport_map[peername]
         for peername, transport in list(self.transport_map.items()):
             if sender != None:
-                data = Message(sender=sender, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S'), type=MessageType.DISCONNECTED) 
+                data = Message(sender=sender, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), type=MessageType.DISCONNECTED) 
                 transport.write(pickle.dumps(data)) 
 
         await asyncio.sleep(1)   
@@ -106,14 +108,14 @@ class Server():
         chats = {
             'sender': data.sender,
             'receiver': data.receiver,
-            'filename': data.filename, 
-            'file_reference': data.file_reference,
+            'filename': data.upload_filename,
+            'filesize': data.upload_file_size, 
             'message': data.message,
             'timestamp': data.timestamp,
             'peername': str(data.sender_peername)
         }
 
-        self.repo.save(Chats, **chats) 
+        chats: Chats = self.repo.save(Chats, **chats) 
         self.repo.update(data.sender, Status, **fields) 
         self.server_logs.append("[{}] {} sent message to {}".format(data.timestamp, data.sender, data.receiver))
         await self.sendmessage(data)  
@@ -137,8 +139,8 @@ class Server():
                 'new_message': 0,
                 'fullname': "{} {} {}".format(data.register_firstname, data.register_middlename, data.register_lastname)
             }
-            self.repo.save(User, **user_model)
-            self.repo.save(Status, **status_model) 
+            user: User = self.repo.save(User, **user_model)
+            status: Status = self.repo.save(Status, **status_model) 
         
         response = Message(  
             type=MessageType.REGISTER_SUCESS if success else MessageType.REGISTER_FAILED
@@ -169,27 +171,67 @@ class Server():
         await asyncio.sleep(1)
 
     async def file(self, data: Message):
-        if len(data.file) == data.filesize:
+        if len(data.upload_filebytes) == data.upload_file_size:
             chats = {
                 'sender': data.sender,
                 'receiver': data.receiver,
                 'message': data.message,
-                'filename': data.filename,
-                'file_reference': data.file_reference, 
+                'filename': data.upload_filename,
+                'filesize': data.upload_file_size,
                 'timestamp': data.timestamp,
                 'peername': str(data.sender_peername)
             }
-            self.repo.save(Chats, **chats)
-            path = self.uploads_path + "/" + data.file_reference
+            chat: Chats = self.repo.save(Chats, **chats)
+            path = self.uploads_path + "/" + str(chat.id)
             if not os.path.exists(path):
                 os.mkdir(path)
-            with open(path + "/" + data.filename, 'wb') as file:
-                file.write(data.file)
+            with open(path + "/" + data.upload_filename, 'wb') as file:
+                file.write(data.upload_filebytes)
 
             data.type = MessageType.MESSAGE
+            if chat != None:
+                data.message_id = chat.id
             await self.sendmessage(data) 
         await asyncio.sleep(1) 
+    
+    async def download(self, data: Message):
+        obj: Chats = self.repo.find(data.download_file_id, Chats)
+        filepath = self.uploads_path + "/{}/{}".format(obj.id, obj.filename)
+        transport = self.transport_map[data.sender_peername]
+        if pathlib.Path(filepath).exists(): 
+            with open(filepath, 'rb') as file:
+                peername = self.sender_peername_map[data.sender]
+                transport = self.transport_map[data.sender_peername]
+                data = Message(
+                    download_filebytes=file.read(),
+                    download_filename=obj.filename,
+                )
+                data = pickle.dumps(data)
 
+                size = Message( 
+                    download_filename=obj.filename,
+                    download_file_size=len(data),
+                    type=MessageType.DOWNLOAD_FILE_PERCENTAGE
+                )
+                
+                size = pickle.dumps(size)
+                size_transport = self.transport_map[peername]
+                size_transport.write(size)
+
+                time.sleep(1)
+                transport.write(data)
+
+                
+        else:
+            data = Message(
+                message="File don't exists!",
+                download_filename=None,
+                download_file_size=None,
+                type=MessageType.DOWNLOAD_FILE_PERCENTAGE
+            )
+            data = pickle.dumps(data)
+            transport.write(data)
+            
     async def sendmessage(self, data: Message):
         user = self.repo.find(data.receiver, Status)
         if user.isonline:
@@ -199,11 +241,11 @@ class Server():
                 image_index=data.image_index, 
                 image_len=data.image_len, 
                 audio=data.audio, 
-                message=data.message, 
+                message=data.message,
+                message_id=data.message_id, 
                 sender=data.sender, 
                 receiver=data.receiver, 
-                filename=data.filename,
-                file_reference=data.file_reference,
+                upload_filename=data.upload_filename,
                 timestamp=data.timestamp, 
                 sender_peername=peername,
                 type=data.type
@@ -218,10 +260,10 @@ class Server():
             image_len=data.image_len, 
             audio=data.audio, 
             message=data.message, 
+            message_id=data.message_id, 
             sender=data.sender, 
             receiver=data.receiver, 
-            filename=data.filename,
-            file_reference=data.file_reference,
+            upload_filename=data.upload_filename,
             timestamp=data.timestamp, 
             sender_peername=peername,
             type=data.type
@@ -229,13 +271,13 @@ class Server():
         self.transport_map[peername].write(pickle.dumps(message))
         await asyncio.sleep(1)
 
-    def tcp_connection_made(self, transport: asyncio.BaseTransport):
+    def tcp_string_connection_made(self, transport: asyncio.BaseTransport):
         peername = transport.get_extra_info('peername')
         sockname = transport.get_extra_info('sockname') 
         self.transport_map[peername] = transport    
-        self.server_logs.append("[{}] {} connected to the server".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), peername))
+        self.server_logs.append("[{}] {} connected to the server".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), peername))
     
-    def tcp_data_received(self, data: bytes, transport: asyncio.BaseTransport):  
+    def tcp_string_data_received(self, data: bytes, transport: asyncio.BaseTransport):  
         peername = transport.get_extra_info('peername')
         if peername not in self.buffer_map: 
             self.buffer_map[peername] = bytearray()
@@ -252,27 +294,31 @@ class Server():
                 asyncio.ensure_future(self.register(data))
             elif data.type == MessageType.LOGIN:   
                 asyncio.ensure_future(self.login(data))
+            elif data.type == MessageType.DOWNLOAD:
+                asyncio.ensure_future(self.download(data))
             self.buffer_map[peername] = bytearray()
         except:
             pass
+      
         time.sleep(0.01)
 
-    def tcp_connection_lost(self, transport: asyncio.BaseTransport):
+    def tcp_string_connection_lost(self, transport: asyncio.BaseTransport):
         asyncio.ensure_future(self.disconnected(transport))
 
-    def tcp_file_connection_made(self, transport: asyncio.BaseTransport):
+    def tcp_upload_connection_made(self, transport: asyncio.BaseTransport):
         peername = transport.get_extra_info('peername')
         sockname = transport.get_extra_info('sockname') 
         self.transport_map[peername] = transport    
-        self.server_logs.append("[{}] {} connected to the server".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S'), peername))
+        self.server_logs.append("[{}] {} connected to the server".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), peername))
     
-    def tcp_file_data_received(self, data: bytes, transport: asyncio.Transport):  
+    def tcp_upload_data_received(self, data: bytes, transport: asyncio.Transport):  
         peername = transport.get_extra_info('peername')
         if peername not in self.filebuffersize_map:
             self.filebuffersize_map[peername] = 0
         self.filebuffersize_map[peername] += len(data)
         size = Message(
-                message=str(self.filebuffersize_map[peername])
+                upload_file_percent=str(self.filebuffersize_map[peername]),
+                type=MessageType.UPLOAD_FILE_PERCENTAGE
             )
         size = pickle.dumps(size) 
         transport.write(size)
@@ -291,7 +337,19 @@ class Server():
             pass
         time.sleep(0.01)
 
-    def tcp_file_connection_lost(self, transport: asyncio.BaseTransport):
+    def tcp_upload_connection_lost(self, transport: asyncio.BaseTransport):
+        asyncio.ensure_future(self.disconnected(transport))
+
+    def tcp_download_connection_made(self, transport: asyncio.BaseTransport):
+        peername = transport.get_extra_info('peername')
+        sockname = transport.get_extra_info('sockname') 
+        self.transport_map[peername] = transport    
+        self.server_logs.append("[{}] {} connected to the server".format(datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), peername))
+    
+    def tcp_download_data_received(self, data: bytes, transport: asyncio.Transport):  
+        pass
+
+    def tcp_download_connection_lost(self, transport: asyncio.BaseTransport):
         asyncio.ensure_future(self.disconnected(transport))
 
     def udp_connection_made(self, transport: asyncio.DatagramTransport):
@@ -308,11 +366,16 @@ class Server():
  
     def start(self): 
         self.loop = asyncio.get_event_loop() 
+        self.loop.set_debug(True)
         self.loop.set_default_executor(ThreadPoolExecutor(1000))
-        coro = self.loop.create_server(lambda: TCPServerProtocol(self.tcp_connection_made, self.tcp_data_received, self.tcp_connection_lost), self.host, self.tcp_port)
+
+        coro = self.loop.create_server(lambda: TCPServerProtocol(self.tcp_string_connection_made, self.tcp_string_data_received, self.tcp_string_connection_lost), self.host, self.tcp_port)
         server = self.loop.run_until_complete(coro)
 
-        coro = self.loop.create_server(lambda: TCPServerProtocol(self.tcp_file_connection_made, self.tcp_file_data_received, self.tcp_file_connection_lost), self.host, 2222)
+        coro = self.loop.create_server(lambda: TCPServerProtocol(self.tcp_upload_connection_made, self.tcp_upload_data_received, self.tcp_upload_connection_lost), self.host, 2222)
+        server = self.loop.run_until_complete(coro)
+
+        coro = self.loop.create_server(lambda: TCPServerProtocol(self.tcp_download_connection_made, self.tcp_download_data_received, self.tcp_download_connection_lost), self.host, 3333)
         server = self.loop.run_until_complete(coro)
     
         connect = self.loop.create_datagram_endpoint(lambda: UDPServerProtocol(self.udp_connection_made, self.udp_datagram_received), local_addr=(self.host, self.udp_port))

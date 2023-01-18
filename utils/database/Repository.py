@@ -6,7 +6,8 @@ from sqlalchemy.orm import sessionmaker
 Base = declarative_base()
 
 class User(Base):
-    __tablename__ = "user" 
+    __tablename__ = "user"  
+    id = Column(String)
     username = Column(String, primary_key=True)
     password = Column(String)
     firstname = Column(String)
@@ -14,6 +15,7 @@ class User(Base):
     lastname = Column(String)
 
     def __init__(self, **kwargs) -> None:
+        self.id = kwargs['username']
         self.username = kwargs['username']
         self.password = kwargs['password']
         self.firstname = kwargs['firstname']
@@ -21,7 +23,8 @@ class User(Base):
         self.lastname = kwargs['lastname']
 
 class Status(Base):
-    __tablename__ = "status"  
+    __tablename__ = "status"   
+    id = Column(String)
     username = Column(String, primary_key=True)
     isonline = Column(Integer)
     message = Column(String)
@@ -29,6 +32,7 @@ class Status(Base):
     fullname = Column(String)
 
     def __init__(self, **kwargs) -> None: 
+        self.id = kwargs['username']
         self.username = kwargs['username']
         self.isonline = kwargs['isonline']
         self.message = kwargs['message']
@@ -42,7 +46,7 @@ class Chats(Base):
     receiver = Column(String)
     message = Column(String)
     filename = Column(String)
-    file_reference = Column(String)
+    filesize = Column(String)
     timestamp = Column(String)
     peername = Column(String)
     
@@ -51,7 +55,7 @@ class Chats(Base):
         self.receiver = kwargs['receiver']
         self.message = kwargs['message']
         self.filename = kwargs['filename']
-        self.file_reference = kwargs['file_reference']
+        self.filesize = kwargs['filesize']
         self.timestamp = kwargs['timestamp']
         self.peername = kwargs['peername']
         
@@ -62,9 +66,10 @@ class Repository:
         self.session = sessionmaker(bind=engine)()
 
     def save(self, model, **kwargs):
-        obj = model(**kwargs)
+        obj: User | Chats | Status = model(**kwargs)
         self.session.add(obj)
-        self.session.commit()
+        self.session.commit() 
+        return self.find(obj.id, model)
 
     def find(self, id, model) -> User | Status | Chats: 
         return self.session.query(model).get(id)
