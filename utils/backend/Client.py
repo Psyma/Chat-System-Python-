@@ -7,6 +7,8 @@ import base64
 import asyncio
 import numpy as np
 import time
+import imghdr
+import pathlib
 
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(CUR_DIR, '..')
@@ -199,11 +201,22 @@ class Client():
 
         try:
             data: Message = pickle.loads(self.download_buffer)
-            path = self.downloads_path + "/" + datetime.now().strftime('%m%d%Y%H%M%S.%f')
-            if not os.path.exists(path):
-                os.mkdir(path)
-            with open(path + "/" + data.download_filename, 'wb') as file:
+            home = os.path.expanduser("~")
+            download_path = os.path.join(home, "Downloads")
+            filepath = os.path.join(download_path, data.download_filename)
+            if os.path.exists(filepath):
+                counter = 1
+                while True: 
+                    stem = pathlib.Path(data.download_filename).stem
+                    suffix = pathlib.Path(data.download_filename).suffix 
+                    filepath = os.path.join(download_path, stem + " ({})".format(counter) + suffix)
+                    if not os.path.exists(filepath):
+                        break
+                    counter = counter + 1
+            
+            with open(filepath, 'wb') as file:
                 file.write(data.download_filebytes)
+
             self.can_download_file = True
             self.download_buffer = bytearray()
         except Exception as e:

@@ -21,6 +21,7 @@ import numpy as np
 from threading import Thread 
 from datetime import datetime 
 from imgui_datascience import *
+from imgui_datascience.example import *
 
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.join(CUR_DIR, '..')
@@ -83,6 +84,12 @@ class AppClient(Gui):
         self.loading_delay_counter: int = 1
         self.sending_files_map: dict[str, str] = {}
         self.downloading_files_map: dict[str, str] = {}
+        self.is_show_image: bool = False
+        self.show_filepath: str = None
+        self.is_click_file: bool = False
+        self.click_filename: str = None
+        self.download_confirmation_data: Message = None
+        self.func_download_confirmation = None
 
     def start(self): 
         self.t = Thread(target=self.show_frames, args=())
@@ -113,7 +120,55 @@ class AppClient(Gui):
         self.profile() 
         if self.is_display_chatbox:
             self.chatbox()
+        #self.view_image()
+        self.download_confirmation()
         self.loading()   
+
+    def download_confirmation(self):
+        if self.is_click_file:
+            imgui.set_next_window_focus() 
+            imgui.set_next_window_size(250, 120)
+            imgui.set_next_window_position((self.window_width - 200) * .50, (self.window_height - 120) * .50) 
+            imgui.push_id('info-4')
+            imgui.open_popup("[INFO]")
+            if imgui.begin_popup_modal("[INFO]", flags=imgui.WINDOW_NO_RESIZE)[0]:   
+                text = "Do you want to download " + self.click_filename + " ?"
+                width, height = imgui.get_window_size() 
+                imgui.set_cursor_pos_y(35)  
+                imgui.text_wrapped(text) 
+                imgui.invisible_button("btn", height=5, width=5)
+                imgui.set_cursor_pos_x((width - (70 * 2)) * 0.5)
+                if imgui.button("Continue", width=70):
+                    self.client.downloading_files_map[self.download_confirmation_data.download_filename] = 0
+                    self.downloadingQs.put(self.func_download_confirmation)
+                    self.downloading_files_map[self.download_confirmation_data.download_filename] = self.func_download_confirmation
+                    self.is_click_file = False
+                imgui.same_line()
+                if imgui.button("Cancel", width=70): 
+                    self.is_click_file = False
+                imgui.end_popup()
+                imgui.pop_id()
+
+    def view_image(self):
+        if self.is_show_image:
+            frame = cv2.imread(self.show_filepath)
+            image = frame.copy()
+            width = image.shape[1]
+            height = image.shape[0]
+
+            if width >= 1024:
+                width = 740
+            if height >= 768:
+                height = 580
+
+            imgui.set_next_window_focus()  
+            imgui.begin("Image", flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE) 
+            imgui_cv.image(image, width=width, height=height)
+            width, height = imgui.get_window_size()
+            imgui.set_cursor_pos_x((width - 50) * .50)
+            if imgui.button("Close", width=50):
+                self.is_show_image = False
+            imgui.end()
 
     def uploading(self): 
         width, height = imgui.get_window_size()
@@ -121,7 +176,7 @@ class AppClient(Gui):
         imgui.set_next_window_focus() 
         imgui.set_next_window_size(width / 2, height)
         imgui.set_next_window_position(x, y)
-        imgui.begin("Uploading files") 
+        imgui.begin("Uploading files", flags=imgui.WINDOW_NO_FOCUS_ON_APPEARING) 
         imgui.columns(3, 'upload_list') 
         imgui.set_column_width(1, 85)
         imgui.set_column_width(2, 120)
@@ -505,6 +560,9 @@ class AppClient(Gui):
                                 if filename and imgui.is_item_hovered():
                                     imgui.set_tooltip(filename)
                                     if imgui.core.is_item_clicked(0):   
+                                        self.is_show_image = True
+                                        self.is_click_file = True
+                                        self.click_filename = filename
                                         data = Message(
                                             download_file_id=id,
                                             download_filename=filename,
@@ -520,11 +578,10 @@ class AppClient(Gui):
                                             client.download_filename = data.download_filename
                                             client.download_filesize = data.download_filesize
                                             data = pickle.dumps(data)
-                                            client.string_transport.write(data)
-                                            
-                                        self.client.downloading_files_map[data.download_filename] = 0
-                                        self.downloadingQs.put(lambda: download(data, self.client))
-                                        self.downloading_files_map[data.download_filename] = lambda: download(data, self.client)
+                                            client.string_transport.write(data) 
+                                        
+                                        self.download_confirmation_data = data
+                                        self.func_download_confirmation = lambda: download(data, self.client) 
                 imgui.end_child()
             imgui.end_child()
         imgui.end()
@@ -634,9 +691,8 @@ class AppClient(Gui):
         self.client.stop()  
     
 if __name__ == "__main__":      
-    # TODO: view image & video 
-    # TODO: video & audio call 
-    # TODO: if the file click ask user to download it or not
+    # TODO: share screen
+    # TODO: video & audio call  
     host = '127.0.0.1'
     login = Login(host=host)
     login.start() 

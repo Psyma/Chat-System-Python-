@@ -50,59 +50,52 @@ class Server():
             }
             self.repo.update(user.username, Status, **fields)  
 
-    async def disconnected(self, transport: asyncio.BaseTransport):
-        sender = None
-        peername = transport.get_extra_info('peername')
-        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f')
-        for sender1, peername1 in list(self.sender_peername_map.items()):
-            if peername == peername1:
-                sender = sender1
-                del self.sender_peername_map[sender1] 
-                fields = {
-                    'isonline': 0
-                }
-                self.repo.update(sender, Status, **fields) 
-                self.server_logs.append("[{}] {} has logged out".format(timestamp, sender))
-                break 
+    async def file(self, data: Message):
+        if len(data.upload_filebytes) == data.upload_filesize:
+            chats = {
+                'sender': data.sender,
+                'receiver': data.receiver,
+                'message': data.message,
+                'filename': data.upload_filename,
+                'filesize': data.upload_filesize,
+                'timestamp': data.timestamp,
+                'peername': str(data.sender_peername)
+            }
+            chat: Chats = self.repo.save(Chats, **chats)
+            path = self.uploads_path + "/" + str(chat.id)
+            if not os.path.exists(path):
+                os.mkdir(path)
+            with open(path + "/" + data.upload_filename, 'wb') as file:
+                file.write(data.upload_filebytes)
 
-        del self.transport_map[peername]
-        for peername, transport in list(self.transport_map.items()):
-            if sender != None:
-                data = Message(sender=sender, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), type=MessageType.DISCONNECTED) 
-                transport.write(pickle.dumps(data)) 
-
-        await asyncio.sleep(1)   
+            data.type = MessageType.MESSAGE
+            if chat != None:
+                data.message_id = chat.id
+            await self.sendmessage(data) 
+        await asyncio.sleep(1) 
     
-    async def connected(self, data: Message):
-        fields = {
-            'isonline': 1
-        }
-        self.repo.update(data.sender, Status, **fields)
-        self.sender_peername_map[data.sender] = data.sender_peername   
-        self.server_logs.append("[{}] {} has logged in".format(data.timestamp, data.sender))
-        status_results = self.repo.list(Status)
-        chat_results = self.repo.list(Chats) 
-        user_results = self.repo.list(User)
-
-        status_response = Message(
-            connected_users=status_results,
-            type=MessageType.CONNECTED_USERS
-        )
-
-        chats_response = Message(
-            sender=data.sender,
-            users=user_results,
-            history_messages=chat_results,
-            type=MessageType.CHATS_HISTORY
-        )
+    async def login(self, data: Message):
+        success = False 
+        user = self.repo.find(data.sender, User)
+        if type(user) != type(None): 
+            if user.password == data.password:
+                success = True
+                message = "Incorrect username or password"
         
-        for sender, peername in self.sender_peername_map.items():
-            self.transport_map[peername].write(pickle.dumps(status_response)) 
-            if data.sender == sender:
-                self.transport_map[peername].write(pickle.dumps(chats_response))
-       
-        await asyncio.sleep(1)   
-    
+        if success:
+            userstatus = self.repo.find(data.sender, Status)
+            if userstatus.isonline:
+                success = False
+                message = "Account already logged"
+        else:
+            message = "Account don't exists"
+        response = Message( 
+            message=message,
+            type=MessageType.LOGIN_SUCCESS if success else MessageType.LOGIN_FAILED
+        ) 
+        self.transport_map[data.sender_peername].write(pickle.dumps(response))  
+        await asyncio.sleep(1)
+
     async def message(self, data: Message):                
         fields = {
             'isonline': 1,
@@ -153,52 +146,6 @@ class Server():
         self.transport_map[data.sender_peername].write(pickle.dumps(response))
         await asyncio.sleep(1)
 
-    async def login(self, data: Message):
-        success = False 
-        user = self.repo.find(data.sender, User)
-        if type(user) != type(None): 
-            if user.password == data.password:
-                success = True
-                message = "Incorrect username or password"
-        
-        if success:
-            userstatus = self.repo.find(data.sender, Status)
-            if userstatus.isonline:
-                success = False
-                message = "Account already logged"
-        else:
-            message = "Account don't exists"
-        response = Message( 
-            message=message,
-            type=MessageType.LOGIN_SUCCESS if success else MessageType.LOGIN_FAILED
-        ) 
-        self.transport_map[data.sender_peername].write(pickle.dumps(response))  
-        await asyncio.sleep(1)
-
-    async def file(self, data: Message):
-        if len(data.upload_filebytes) == data.upload_filesize:
-            chats = {
-                'sender': data.sender,
-                'receiver': data.receiver,
-                'message': data.message,
-                'filename': data.upload_filename,
-                'filesize': data.upload_filesize,
-                'timestamp': data.timestamp,
-                'peername': str(data.sender_peername)
-            }
-            chat: Chats = self.repo.save(Chats, **chats)
-            path = self.uploads_path + "/" + str(chat.id)
-            if not os.path.exists(path):
-                os.mkdir(path)
-            with open(path + "/" + data.upload_filename, 'wb') as file:
-                file.write(data.upload_filebytes)
-
-            data.type = MessageType.MESSAGE
-            if chat != None:
-                data.message_id = chat.id
-            await self.sendmessage(data) 
-        await asyncio.sleep(1) 
-    
     async def download(self, data: Message):
         obj: Chats = self.repo.find(data.download_file_id, Chats)
         filepath = self.uploads_path + "/{}/{}".format(obj.id, obj.filename)
@@ -224,9 +171,7 @@ class Server():
                 size_transport.write(size)
 
                 time.sleep(1)
-                transport.write(data)
-
-                
+                transport.write(data) 
         else:
             data = Message(
                 message="File don't exists!",
@@ -236,28 +181,8 @@ class Server():
             )
             data = pickle.dumps(data)
             transport.write(data)
+        await asyncio.sleep(1) 
     
-    async def profile_picture(self, data: Message): 
-        #import cv2
-        #import numpy as np
-        #
-        #user: User = self.repo.find(data.sender, User)
-        #image = np.frombuffer(user.profile_picture, np.uint8)
-        #image = cv2.imdecode(image, cv2.IMREAD_COLOR)
-        #cv2.imshow('window', image)
-        #cv2.waitKey(0)
-        fields = {
-            'profile_picture': data.profile_picture
-        }
-        self.repo.update(data.sender, User, **fields)
-        user_results = self.repo.list(User)
-        user_response = Message( 
-            users=user_results, 
-            type=MessageType.PROFILE_PICTURE
-        )
-        for sender, peername in self.sender_peername_map.items():
-            self.transport_map[peername].write(pickle.dumps(user_response))
-
     async def sendmessage(self, data: Message):
         user = self.repo.find(data.receiver, Status)
         if user.isonline:
@@ -296,6 +221,73 @@ class Server():
         )   
         self.transport_map[peername].write(pickle.dumps(message))
         await asyncio.sleep(1)
+
+    async def connected(self, data: Message):
+        fields = {
+            'isonline': 1
+        }
+        self.repo.update(data.sender, Status, **fields)
+        self.sender_peername_map[data.sender] = data.sender_peername   
+        self.server_logs.append("[{}] {} has logged in".format(data.timestamp, data.sender))
+        status_results = self.repo.list(Status)
+        chat_results = self.repo.list(Chats) 
+        user_results = self.repo.list(User)
+
+        status_response = Message(
+            connected_users=status_results,
+            type=MessageType.CONNECTED_USERS
+        )
+
+        chats_response = Message(
+            sender=data.sender,
+            users=user_results,
+            history_messages=chat_results,
+            type=MessageType.CHATS_HISTORY
+        )
+        
+        for sender, peername in self.sender_peername_map.items():
+            self.transport_map[peername].write(pickle.dumps(status_response)) 
+            if data.sender == sender:
+                self.transport_map[peername].write(pickle.dumps(chats_response))
+       
+        await asyncio.sleep(1)   
+   
+    async def disconnected(self, transport: asyncio.BaseTransport):
+        sender = None
+        peername = transport.get_extra_info('peername')
+        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f')
+        for sender1, peername1 in list(self.sender_peername_map.items()):
+            if peername == peername1:
+                sender = sender1
+                del self.sender_peername_map[sender1] 
+                fields = {
+                    'isonline': 0
+                }
+                self.repo.update(sender, Status, **fields) 
+                self.server_logs.append("[{}] {} has logged out".format(timestamp, sender))
+                break 
+
+        del self.transport_map[peername]
+        for peername, transport in list(self.transport_map.items()):
+            if sender != None:
+                data = Message(sender=sender, timestamp=datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), type=MessageType.DISCONNECTED) 
+                transport.write(pickle.dumps(data)) 
+
+        await asyncio.sleep(1)   
+    
+    async def profile_picture(self, data: Message): 
+        fields = {
+            'profile_picture': data.profile_picture
+        }
+        self.repo.update(data.sender, User, **fields)
+        user_results = self.repo.list(User)
+        user_response = Message( 
+            users=user_results, 
+            type=MessageType.PROFILE_PICTURE
+        )
+        for sender, peername in self.sender_peername_map.items():
+            self.transport_map[peername].write(pickle.dumps(user_response))
+        await asyncio.sleep(1) 
 
     def tcp_string_connection_made(self, transport: asyncio.BaseTransport):
         peername = transport.get_extra_info('peername')
