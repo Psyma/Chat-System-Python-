@@ -15,6 +15,8 @@ import asyncio
 import socket
 import pathlib
 import filetype
+import imutils
+import numpy as np
 
 from threading import Thread 
 from datetime import datetime 
@@ -374,8 +376,14 @@ class AppClient(Gui):
         
         if True:
             imgui.begin_child("1", border=False, height=65, flags=imgui.WINDOW_NO_SCROLLBAR)
-            img = cv2.imread(ROOT_DIR + "/assets/default_profile.png")
-            imgui_cv.image(img, width=65)
+            if self.to_user in self.client.profile_pictures:
+                image = self.client.profile_pictures[self.to_user]
+                image = np.frombuffer(image, np.uint8)
+                image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+                imgui_cv.image(image, width=65, height=64) 
+            else: 
+                image = cv2.imread(ROOT_DIR + "/assets/default_profile.png")  
+                imgui_cv.image(image, width=65, height=64)  
             imgui.same_line()
             if True:
                 width, height = imgui.get_window_size()
@@ -428,6 +436,7 @@ class AppClient(Gui):
                         sender_peername = self.client.string_sockname, 
                         type = MessageType.MESSAGE
                     ) 
+                     
                     self.send_string(data)
 
                 imgui.set_keyboard_focus_here()
@@ -443,7 +452,7 @@ class AppClient(Gui):
                                 sender=self.client.username,
                                 upload_filebytes = file.read(),  
                                 upload_filename = filename,
-                                upload_file_size = filesize, 
+                                upload_filesize = filesize, 
                                 receiver = self.to_user, 
                                 timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
                                 sender_peername = self.client.string_sockname, 
@@ -453,7 +462,7 @@ class AppClient(Gui):
                             def upload(data: Message, client: Client):
                                 client.upload_filename = data.upload_filename
                                 data = pickle.dumps(data)
-                                client.upload_file_size = len(data)
+                                client.upload_filesize = len(data)
                                 client.upload_transport.write(data)
 
                             self.client.uploading_files_map[data.upload_filename] = 0
@@ -499,7 +508,7 @@ class AppClient(Gui):
                                         data = Message(
                                             download_file_id=id,
                                             download_filename=filename,
-                                            download_file_size=filesize,
+                                            download_filesize=filesize,
                                             sender=self.client.username,
                                             receiver=self.to_user,
                                             timestamp = timestamp, 
@@ -509,7 +518,7 @@ class AppClient(Gui):
 
                                         def download(data: Message, client: Client):
                                             client.download_filename = data.download_filename
-                                            client.download_file_size = data.download_file_size
+                                            client.download_filesize = data.download_filesize
                                             data = pickle.dumps(data)
                                             client.string_transport.write(data)
                                             
@@ -528,8 +537,33 @@ class AppClient(Gui):
 
         if True:
             imgui.begin_child("1", border=True, height=130) 
-            img = cv2.imread(ROOT_DIR + "/assets/default_profile.png")  
-            imgui_cv.image(img, width=65) 
+            if self.client.username in self.client.profile_pictures:
+                image = self.client.profile_pictures[self.client.username]
+                image = np.frombuffer(image, np.uint8)
+                image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+                imgui_cv.image(image, width=65, height=64) 
+            else: 
+                image = cv2.imread(ROOT_DIR + "/assets/default_profile.png")  
+                imgui_cv.image(image, width=65, height=64)  
+            if imgui.core.is_item_clicked(0):
+                filepath = easygui.fileopenbox(title="Select Image")
+                if filetype.is_image(filepath):  
+                    image = cv2.imread(filepath)
+                    image = imutils.resize(image, width=65, height=65)
+                    success, image = cv2.imencode('.jpg', image)
+                    image = image.tobytes()
+                    
+                    data = Message( 
+                        profile_picture = image,
+                        sender = self.client.username, 
+                        receiver = self.to_user, 
+                        timestamp = datetime.now().strftime('%m/%d/%Y %H:%M:%S.%f'), 
+                        sender_peername = self.client.string_sockname, 
+                        type = MessageType.PROFILE_PICTURE
+                    ) 
+                     
+                    self.send_string(data)
+
             imgui.same_line()
             imgui.begin_child("1.1", border=True, height=65)
             imgui.push_font(self.fonts_map['profile-fonts-Maladewa-30']['font-obj'])  
@@ -600,9 +634,9 @@ class AppClient(Gui):
         self.client.stop()  
     
 if __name__ == "__main__":      
-    # TODO: view image & video
-    # TODO: change profile picture
+    # TODO: view image & video 
     # TODO: video & audio call 
+    # TODO: if the file click ask user to download it or not
     host = '127.0.0.1'
     login = Login(host=host)
     login.start() 

@@ -82,12 +82,16 @@ class Server():
         self.server_logs.append("[{}] {} has logged in".format(data.timestamp, data.sender))
         status_results = self.repo.list(Status)
         chat_results = self.repo.list(Chats) 
+        user_results = self.repo.list(User)
+
         status_response = Message(
             connected_users=status_results,
             type=MessageType.CONNECTED_USERS
         )
+
         chats_response = Message(
             sender=data.sender,
+            users=user_results,
             history_messages=chat_results,
             type=MessageType.CHATS_HISTORY
         )
@@ -109,7 +113,7 @@ class Server():
             'sender': data.sender,
             'receiver': data.receiver,
             'filename': data.upload_filename,
-            'filesize': data.upload_file_size, 
+            'filesize': data.upload_filesize, 
             'message': data.message,
             'timestamp': data.timestamp,
             'peername': str(data.sender_peername)
@@ -130,7 +134,8 @@ class Server():
                 'password': data.register_password,
                 'firstname': data.register_firstname,
                 'middlename': data.register_middlename,
-                'lastname': data.register_lastname
+                'lastname': data.register_lastname,
+                'profile_picture': None
             }
             status_model = {
                 'username': data.register_username,
@@ -171,13 +176,13 @@ class Server():
         await asyncio.sleep(1)
 
     async def file(self, data: Message):
-        if len(data.upload_filebytes) == data.upload_file_size:
+        if len(data.upload_filebytes) == data.upload_filesize:
             chats = {
                 'sender': data.sender,
                 'receiver': data.receiver,
                 'message': data.message,
                 'filename': data.upload_filename,
-                'filesize': data.upload_file_size,
+                'filesize': data.upload_filesize,
                 'timestamp': data.timestamp,
                 'peername': str(data.sender_peername)
             }
@@ -210,7 +215,7 @@ class Server():
 
                 size = Message( 
                     download_filename=obj.filename,
-                    download_file_size=len(data),
+                    download_filesize=len(data),
                     type=MessageType.DOWNLOAD_FILE_PERCENTAGE
                 )
                 
@@ -226,12 +231,33 @@ class Server():
             data = Message(
                 message="File don't exists!",
                 download_filename=None,
-                download_file_size=None,
+                download_filesize=None,
                 type=MessageType.DOWNLOAD_FILE_PERCENTAGE
             )
             data = pickle.dumps(data)
             transport.write(data)
-            
+    
+    async def profile_picture(self, data: Message): 
+        #import cv2
+        #import numpy as np
+        #
+        #user: User = self.repo.find(data.sender, User)
+        #image = np.frombuffer(user.profile_picture, np.uint8)
+        #image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+        #cv2.imshow('window', image)
+        #cv2.waitKey(0)
+        fields = {
+            'profile_picture': data.profile_picture
+        }
+        self.repo.update(data.sender, User, **fields)
+        user_results = self.repo.list(User)
+        user_response = Message( 
+            users=user_results, 
+            type=MessageType.PROFILE_PICTURE
+        )
+        for sender, peername in self.sender_peername_map.items():
+            self.transport_map[peername].write(pickle.dumps(user_response))
+
     async def sendmessage(self, data: Message):
         user = self.repo.find(data.receiver, Status)
         if user.isonline:
@@ -296,6 +322,8 @@ class Server():
                 asyncio.ensure_future(self.login(data))
             elif data.type == MessageType.DOWNLOAD:
                 asyncio.ensure_future(self.download(data))
+            elif data.type == MessageType.PROFILE_PICTURE:
+                asyncio.ensure_future(self.profile_picture(data))
             self.buffer_map[peername] = bytearray()
         except:
             pass

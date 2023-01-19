@@ -34,8 +34,8 @@ class Client():
         self.connected: bool = False 
         self.tcp_port: int = tcp_port
         self.udp_port: int = udp_port
-        self.upload_file_size: int = 0
-        self.download_file_size: int = 0
+        self.upload_filesize: int = 1
+        self.download_filesize: int = 1
         self.can_upload_file: bool = True
         self.can_download_file: bool = True
         self.upload_filename: str = None
@@ -58,6 +58,7 @@ class Client():
         self.file_buffer = []
         self.buffer_map = {}
         self.download_buffer = bytearray()
+        self.profile_pictures: dict[str, bytes] = {}
     
     def tcp_string_connection_made(self, transport: asyncio.Transport):
         self.string_transport = transport
@@ -89,7 +90,7 @@ class Client():
                             'name': name.split(" ")[0],
                             'message': data.message,
                             'filename': data.upload_filename,
-                            'filesize': data.upload_file_size,
+                            'filesize': data.upload_filesize,
                             'timestamp': data.timestamp, 
                         })  
                         self.users_map[key]['last-message'] = data.message if data.message else data.upload_filename
@@ -150,9 +151,16 @@ class Client():
                                 'timestamp': chat.timestamp, 
                             }) 
                             self.users_map[key]['last-message'] = chat.message if chat.message else chat.filename 
+                    for user in data.users:
+                        if user.profile_picture != None:
+                            self.profile_pictures[user.username] = user.profile_picture
             elif data.type == MessageType.DOWNLOAD_FILE_PERCENTAGE:
                 self.download_filename = data.download_filename
-                self.download_file_size = data.download_file_size
+                self.download_filesize = data.download_filesize
+            elif data.type == MessageType.PROFILE_PICTURE:
+                for user in data.users:
+                    if user.profile_picture != None:
+                        self.profile_pictures[user.username] = user.profile_picture
         except:
             pass    
         time.sleep(0.01)
@@ -169,7 +177,7 @@ class Client():
         try:
             data: Message = pickle.loads(data)
             if data.type == MessageType.UPLOAD_FILE_PERCENTAGE:
-                self.uploading_files_map[self.upload_filename] = int((int(data.upload_file_percent) / self.upload_file_size) * 100)
+                self.uploading_files_map[self.upload_filename] = int((int(data.upload_file_percent) / self.upload_filesize) * 100)
                 if self.uploading_files_map[self.upload_filename] == 100:
                     self.upload_filename = None
                     self.can_upload_file = True  
@@ -187,7 +195,7 @@ class Client():
 
     def tcp_download_data_received(self, data: bytes):  
         self.download_buffer += data 
-        self.downloading_files_map[self.download_filename] = int((len(self.download_buffer) / int(self.download_file_size)) * 100)
+        self.downloading_files_map[self.download_filename] = int((len(self.download_buffer) / int(self.download_filesize)) * 100)
 
         try:
             data: Message = pickle.loads(self.download_buffer)

@@ -1,5 +1,5 @@
 from __future__ import annotations 
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, String, BLOB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -13,6 +13,7 @@ class User(Base):
     firstname = Column(String)
     middlename = Column(String)
     lastname = Column(String)
+    profile_picture = Column(BLOB)
 
     def __init__(self, **kwargs) -> None:
         self.id = kwargs['username']
@@ -21,6 +22,7 @@ class User(Base):
         self.firstname = kwargs['firstname']
         self.middlename = kwargs['middlename']
         self.lastname = kwargs['lastname']
+        self.profile_picture = kwargs['profile_picture']
 
 class Status(Base):
     __tablename__ = "status"   

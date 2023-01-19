@@ -21,4 +21,5 @@ class MessageType(Enum):
     UPLOAD_FILE_PERCENTAGE = 18,
     DOWNLOAD_FILE_PERCENTAGE = 19,
     DOWNLOAD = 20,
+    PROFILE_PICTURE = 21,
     

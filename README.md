@@ -1,13 +1,13 @@
 ### A Simple Chat System Written in Python
 
-A simple "Chat-System" Desktop Application main core library is pyimgui for GUI and asyncio for network
+A simple Chat-System Desktop Application main core library is pyimgui for GUI and asyncio for network
 
 # 📑Features:
-- [x] Upload file
-- [x] Download file
-- [ ] Video Call
-- [ ] Audio Call
-- [ ] Share Screen
+* [ ] Video Call
+* [ ] Audio Call
+* [x] Upload file
+* [x] Download file
+* [ ] Share Screen
 
 # 🔽Installation:
 ```
